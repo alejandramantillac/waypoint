@@ -16,19 +16,32 @@ function toolResult(decisions: Decision[]) {
 }
 
 export async function runMcp(): Promise<void> {
-  const cwd = process.cwd();
+  const cwd = process.env.CLAUDE_PROJECT_DIR ?? process.cwd();
 
-  const server = new McpServer({
-    name: "waypoint",
-    version: "0.1.0",
-  });
+  const server = new McpServer(
+    {
+      name: "waypoint",
+      version: "0.1.0",
+    },
+    {
+      instructions:
+        "Waypoint distills the architecture decisions (what was decided, why, what was discarded) buried in this " +
+        "project's Claude Code session history. Whenever the user asks WHY something in this codebase was built a " +
+        "certain way, why a technology was chosen, or what alternative was considered — use waypoint's " +
+        "search_decisions or get_decisions_by_file tools BEFORE grepping the code or reading docs. Code comments " +
+        "and grep rarely contain the reasoning; this server does.",
+    },
+  );
 
   server.registerTool(
     "search_decisions",
     {
       title: "Search decisions",
       description:
-        "Search this project's distilled architecture decisions by keyword (matches title, decision, why, or discarded fields).",
+        "Use this WHENEVER the user asks why this project does something a certain way, why a technology/library was chosen, or what alternative was considered and discarded. " +
+        "The reasoning behind a decision is rarely in code comments — it lives here, distilled from the Claude Code sessions where the decision was actually made. " +
+        "Prefer this over grepping the code or reading files first when the question is about intent or justification, not implementation. " +
+        "Searches this project's distilled architecture decisions by keyword (matches title, decision, why, or discarded fields).",
       inputSchema: { keyword: z.string() },
     },
     async ({ keyword }) => {
@@ -42,7 +55,8 @@ export async function runMcp(): Promise<void> {
     {
       title: "List timeline",
       description:
-        "List this project's distilled architecture decisions in chronological order, optionally filtered by an ISO date range.",
+        "Use this when the user wants an overview of what architecture decisions were made in this project and when, e.g. 'what has been decided here?' or 'give me a history of the design choices'. " +
+        "Lists this project's distilled architecture decisions in chronological order, optionally filtered by an ISO date range.",
       inputSchema: {
         since: z.string().optional().describe("ISO date; only decisions created at or after this date"),
         until: z.string().optional().describe("ISO date; only decisions created at or before this date"),
@@ -59,7 +73,8 @@ export async function runMcp(): Promise<void> {
     {
       title: "Get decisions by file",
       description:
-        "List this project's distilled architecture decisions whose files_affected includes the given path (substring match).",
+        "Use this WHENEVER the user asks why a specific file is written the way it is, or before editing a file whose design might be intentional — check here first to avoid undoing a deliberate decision. " +
+        "Lists this project's distilled architecture decisions whose files_affected includes the given path (substring match).",
       inputSchema: { path: z.string() },
     },
     async ({ path }) => {
