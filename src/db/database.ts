@@ -3,6 +3,7 @@ import { existsSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import type { ParsedSession } from "../parser/types.js";
 import { parseSessionFile } from "../parser/sessions.js";
+import { toLocalDay } from "../util/dates.js";
 
 export interface Decision {
   id: number;
@@ -262,23 +263,19 @@ export interface DayGroup {
 }
 
 export function listDecisionsGroupedByDay(db: DatabaseSync): DayGroup[] {
-  const rows = db
-    .prepare(
-      `SELECT ${DECISION_COLUMNS}, DATE(created_at) AS day
-       FROM decisions ORDER BY day ASC, created_at ASC`,
-    )
-    .all() as (Parameters<typeof rowToDecision>[0] & { day: string })[];
+  const decisions = listDecisions(db);
 
   const groups = new Map<string, DayGroup>();
-  for (const r of rows) {
-    let group = groups.get(r.day);
+  for (const d of decisions) {
+    const day = toLocalDay(d.createdAt);
+    let group = groups.get(day);
     if (!group) {
-      group = { day: r.day, decisions: [] };
-      groups.set(r.day, group);
+      group = { day, decisions: [] };
+      groups.set(day, group);
     }
-    group.decisions.push(rowToDecision(r));
+    group.decisions.push(d);
   }
-  return [...groups.values()];
+  return [...groups.values()].sort((a, b) => a.day.localeCompare(b.day));
 }
 
 export interface ParserIssue {

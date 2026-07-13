@@ -15,6 +15,7 @@ import {
 } from "../db/database.js";
 import { annotateWithGitStatus } from "../git/status.js";
 import { renderPage, type SearchResultItem } from "../ui/render.js";
+import { toLocalDay } from "../util/dates.js";
 
 const DEFAULT_PORT = 4173;
 const GROUP_PAGE_SIZE = 20;
@@ -28,9 +29,8 @@ function annotateGroups<D extends { filesAffected: string[]; modifiedSinceDecisi
   return groups.map((g) => ({ ...g, decisions: annotateWithGitStatus(cwd, g.decisions, getDate) }));
 }
 
-/** Compares only the date portion (YYYY-MM-DD) so `since`/`until` from a plain <input type="date"> line up with full ISO timestamps. */
 function withinRange(dateStr: string, since?: string, until?: string): boolean {
-  const day = dateStr.slice(0, 10);
+  const day = toLocalDay(dateStr);
   if (since && day < since) return false;
   if (until && day > until) return false;
   return true;
