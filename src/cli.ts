@@ -2,10 +2,12 @@
 import { runGenerate } from "./commands/generate.js";
 import { runUi } from "./commands/ui.js";
 import { runMcpCommand } from "./commands/mcp.js";
+import { runSetup } from "./commands/setup.js";
 
 const HELP = `waypoint — distills architecture decisions from your Claude Code session history
 
 Usage:
+  waypoint setup                       Register waypoint as an MCP server for all projects
   waypoint generate [--since <date>]   Distill new sessions into decisions
   waypoint ui                          Show decisions on localhost
   waypoint mcp                         Run a read-only MCP server over stdio
@@ -16,6 +18,9 @@ async function main() {
   const [, , command, ...rest] = process.argv;
 
   switch (command) {
+    case "setup":
+      await runSetup();
+      break;
     case "generate":
       await runGenerate(rest);
       break;
