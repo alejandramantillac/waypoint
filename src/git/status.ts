@@ -42,6 +42,8 @@ interface HasFilesAffected {
   modifiedSinceDecision?: boolean | null;
 }
 
+const modifiedSinceCache = new Map<string, boolean>();
+
 export function annotateWithGitStatus<T extends HasFilesAffected>(
   cwd: string,
   decisions: T[],
@@ -52,13 +54,12 @@ export function annotateWithGitStatus<T extends HasFilesAffected>(
     return decisions.map((d) => ({ ...d, modifiedSinceDecision: null }));
   }
 
-  const cache = new Map<string, boolean>();
   function fileModifiedSince(filePath: string, isoDate: string): boolean {
-    const key = `${filePath}@@${isoDate}`;
-    let result = cache.get(key);
+    const key = `${cwd}@@${filePath}@@${isoDate}`;
+    let result = modifiedSinceCache.get(key);
     if (result === undefined) {
       result = wasModifiedSince(cwd, filePath, isoDate);
-      cache.set(key, result);
+      modifiedSinceCache.set(key, result);
     }
     return result;
   }
