@@ -53,6 +53,10 @@ Everything runs locally: no session data leaves your machine unless you explicit
 - [Claude Code](https://claude.com/claude-code) installed and authenticated
 - `git` (optional — enables the "modified since this decision" warning; skipped silently if the project isn't a git repo)
 
+## Platform support
+
+Verified on Windows and Linux. Not yet tested on macOS, though nothing in the implementation is Windows/Linux-specific — the same session-directory lookup and local-only architecture should hold there too.
+
 ## License
 
 MIT
