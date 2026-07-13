@@ -10,7 +10,10 @@
     "build": "tsc -p tsconfig.json",
     "dev": "tsx src/cli.ts"
   },
-  "dependencies": {},
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "zod": "^4.4.3"
+  },
   "devDependencies": {
     "@types/node": "^22.5.4",
     "tsx": "^4.19.0",
