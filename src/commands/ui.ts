@@ -18,8 +18,8 @@ import { renderPage, type SearchResultItem } from "../ui/render.js";
 import { toLocalDay, isValidDateString } from "../util/dates.js";
 
 const DEFAULT_PORT = 4173;
-const GROUP_PAGE_SIZE = 20;
-const DECISION_PAGE_SIZE = 20;
+const GROUP_PAGE_SIZE = 10;
+const DECISION_PAGE_SIZE = 10;
 
 function annotateGroups<D extends { filesAffected: string[]; modifiedSinceDecision?: boolean | null }, G extends { decisions: D[] }>(
   cwd: string,

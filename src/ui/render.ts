@@ -447,7 +447,7 @@ export function renderPage(opts: RenderPageOptions): string {
 
   .stale-toggle { display: inline-flex; margin-bottom: .9rem; }
 
-  nav.pagination { display: flex; gap: .75rem; align-items: center; margin: 1.25rem 0; font-size: .9rem; }
+  nav.pagination { display: flex; gap: .75rem; align-items: center; justify-content: center; margin: 1.75rem 0 1rem; font-size: .9rem; }
   .page-indicator { font-family: var(--font-mono); color: var(--text-muted); font-size: .8rem; }
 
   .search-result { margin-bottom: .75rem; }
@@ -576,7 +576,6 @@ export function renderPage(opts: RenderPageOptions): string {
   ${renderFilterForm(query)}
   ${renderStaleToggle(query)}
   ${meta}
-  ${renderPagination(query, page, totalPages)}
   ${body}
   ${renderPagination(query, page, totalPages)}
   ${importedSection}
