@@ -2,12 +2,12 @@
 import { runGenerate } from "./commands/generate.js";
 import { runUi } from "./commands/ui.js";
 
-const HELP = `waypoint — destila decisiones de arquitectura de tu historial de Claude Code
+const HELP = `waypoint — distills architecture decisions from your Claude Code session history
 
-Uso:
-  waypoint generate [--since <fecha>]   Destila sesiones nuevas en decisiones
-  waypoint ui                           Muestra las decisiones en localhost
-  waypoint --help                       Muestra esta ayuda
+Usage:
+  waypoint generate [--since <date>]   Distill new sessions into decisions
+  waypoint ui                          Show decisions on localhost
+  waypoint --help                      Show this help
 `;
 
 async function main() {
@@ -26,7 +26,7 @@ async function main() {
       console.log(HELP);
       break;
     default:
-      console.error(`Comando desconocido: ${command}\n`);
+      console.error(`Unknown command: ${command}\n`);
       console.log(HELP);
       process.exitCode = 1;
   }
