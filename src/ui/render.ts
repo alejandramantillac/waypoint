@@ -379,6 +379,21 @@ export function renderPage(opts: RenderPageOptions): string {
     letter-spacing: 0.02em;
   }
 
+  footer.site-footer {
+    margin-top: 2.5rem;
+    padding-top: 1rem;
+    border-top: 1px solid var(--border-subtle);
+    font-family: var(--font-mono);
+    font-size: .75rem;
+    color: var(--text-muted);
+  }
+  footer.site-footer a {
+    color: var(--text-muted);
+  }
+  footer.site-footer a:hover {
+    color: var(--text-accent);
+  }
+
   h2 {
     font-family: var(--font-display);
     font-weight: 600;
@@ -580,6 +595,9 @@ export function renderPage(opts: RenderPageOptions): string {
   ${renderPagination(query, page, totalPages)}
   ${importedSection}
   ${renderParserIssues(issues)}
+  <footer class="site-footer">
+    waypoint · built by <a href="https://alejamantillac.com">Alejandra Mantilla</a> · <a href="https://github.com/alejandramantillac/waypoint">GitHub</a> · <a href="https://www.linkedin.com/in/maria-alejandra-mantilla/">LinkedIn</a>
+  </footer>
 </body>
 </html>`;
 }

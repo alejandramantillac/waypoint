@@ -61,3 +61,7 @@ Verified on Windows and Linux. Not yet tested on macOS, though nothing in the im
 ## License
 
 MIT
+
+## Author
+
+Built by [Alejandra Mantilla](https://alejamantillac.com) — [GitHub](https://github.com/alejandramantillac) — [LinkedIn](https://www.linkedin.com/in/maria-alejandra-mantilla/)

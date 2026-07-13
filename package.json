@@ -4,6 +4,15 @@
   "description": "Distills the architecture decisions buried in your coding agent's session history into a navigable log.",
   "keywords": ["claude-code", "mcp", "cli", "architecture-decisions", "adr"],
   "license": "MIT",
+  "author": {
+    "name": "Alejandra Mantilla",
+    "url": "https://alejamantillac.com"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/alejandramantillac/waypoint.git"
+  },
+  "homepage": "https://github.com/alejandramantillac/waypoint",
   "type": "module",
   "bin": {
     "waypoint": "./dist/cli.js"
