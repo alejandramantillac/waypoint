@@ -2,7 +2,13 @@
   "name": "waypoint-cli",
   "version": "0.1.0",
   "description": "Distills the architecture decisions buried in your coding agent's session history into a navigable log.",
-  "keywords": ["claude-code", "mcp", "cli", "architecture-decisions", "adr"],
+  "keywords": [
+    "claude-code",
+    "mcp",
+    "cli",
+    "architecture-decisions",
+    "adr"
+  ],
   "license": "MIT",
   "author": {
     "name": "Alejandra Mantilla",
@@ -10,14 +16,16 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/alejandramantillac/waypoint.git"
+    "url": "git+https://github.com/alejandramantillac/waypoint.git"
   },
   "homepage": "https://github.com/alejandramantillac/waypoint",
   "type": "module",
   "bin": {
-    "waypoint": "./dist/cli.js"
+    "waypoint": "dist/cli.js"
   },
-  "files": ["dist"],
+  "files": [
+    "dist"
+  ],
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "dev": "tsx src/cli.ts"

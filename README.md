@@ -25,6 +25,24 @@ waypoint setup
 
 `waypoint setup` registers the MCP server once for every project on this machine, so you don't need to repeat it per repo.
 
+Other ways to get it:
+
+```bash
+# Try it without installing anything
+npx waypoint-cli setup
+
+# With another package manager
+pnpm add -g waypoint-cli
+yarn global add waypoint-cli
+bun add -g waypoint-cli
+
+# From source
+git clone https://github.com/alejandramantillac/waypoint.git
+cd waypoint
+npm install && npm run build
+npm link
+```
+
 ## Usage
 
 Run these from inside the project you want decisions for:
