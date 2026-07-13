@@ -1,0 +1,22 @@
+{
+  "name": "waypoint",
+  "version": "0.1.0",
+  "description": "Destila decisiones de arquitectura enterradas en el historial de sesiones de Claude Code.",
+  "type": "module",
+  "bin": {
+    "waypoint": "./dist/cli.js"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "dev": "tsx src/cli.ts"
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "@types/node": "^22.5.4",
+    "tsx": "^4.19.0",
+    "typescript": "^5.5.4"
+  },
+  "engines": {
+    "node": ">=22.5.0"
+  }
+}
