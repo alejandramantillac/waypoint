@@ -51,9 +51,19 @@ function parseSinceFlag(args: string[]): Date | undefined {
   return date;
 }
 
+function parseModelFlag(args: string[]): string | undefined {
+  const idx = args.indexOf("--model");
+  if (idx === -1) return undefined;
+  const value = args[idx + 1];
+  if (!value)
+    throw new Error("--model requires a value, e.g. --model haiku (also accepts sonnet, opus, fable, or a full model name)");
+  return value;
+}
+
 export async function runGenerate(args: string[]): Promise<void> {
   const cwd = process.cwd();
   const since = parseSinceFlag(args);
+  const model = parseModelFlag(args);
 
   const db = openDatabase(cwd);
   const processedIds = getProcessedSessionIds(db);
@@ -76,7 +86,7 @@ export async function runGenerate(args: string[]): Promise<void> {
   let errorCount = 0;
 
   for (const session of newSessions) {
-    const result = await distillSession(session);
+    const result = await distillSession(session, { model });
 
     if (!result.ok) {
       errorCount++;

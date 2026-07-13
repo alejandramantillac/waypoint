@@ -12,7 +12,7 @@ const HELP = `waypoint — distills architecture decisions from your Claude Code
 Usage:
   waypoint setup                       Register waypoint as an MCP server for all projects
   waypoint status                      Preview sessions found, no cost (no claude -p calls)
-  waypoint generate [--since <date>]   Distill new sessions into decisions
+  waypoint generate [--since <date>] [--model <model>]   Distill new sessions into decisions
   waypoint ui                          Show decisions on localhost
   waypoint mcp                         Run a read-only MCP server over stdio
   waypoint export --author "<name>" [file]   Export this project's decisions to share

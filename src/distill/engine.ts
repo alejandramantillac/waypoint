@@ -107,29 +107,33 @@ function isolatedRunDir(): string {
   return dir;
 }
 
-export function distillSession(session: ParsedSession): Promise<DistillResult> {
+export interface DistillOptions {
+  /** Forwarded to `claude -p --model <value>`. Omit to use claude -p's own default. */
+  model?: string;
+}
+
+export function distillSession(session: ParsedSession, options: DistillOptions = {}): Promise<DistillResult> {
   return new Promise((resolve) => {
     if (!session.transcript.trim()) {
       resolve({ ok: true, decisions: [] });
       return;
     }
 
-    const child = spawn(
-      "claude",
-      [
-        "-p",
-        PROMPT,
-        "--output-format",
-        "json",
-        "--json-schema",
-        JSON_SCHEMA,
-        "--disallowedTools",
-        DISALLOWED_TOOLS,
-        "--max-budget-usd",
-        MAX_BUDGET_USD,
-      ],
-      { stdio: ["pipe", "pipe", "pipe"], cwd: isolatedRunDir() },
-    );
+    const args = [
+      "-p",
+      PROMPT,
+      "--output-format",
+      "json",
+      "--json-schema",
+      JSON_SCHEMA,
+      "--disallowedTools",
+      DISALLOWED_TOOLS,
+      "--max-budget-usd",
+      MAX_BUDGET_USD,
+    ];
+    if (options.model) args.push("--model", options.model);
+
+    const child = spawn("claude", args, { stdio: ["pipe", "pipe", "pipe"], cwd: isolatedRunDir() });
 
     let stdout = "";
     let stderr = "";

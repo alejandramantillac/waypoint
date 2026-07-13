@@ -32,6 +32,7 @@ waypoint status                # free preview: sessions found, how many are new,
 
 waypoint generate              # distill new sessions into decisions
 waypoint generate --since 2026-07-01   # only consider sessions from this date on
+waypoint generate --model haiku        # use a cheaper/faster model (also accepts sonnet, opus, fable, or a full model name)
 
 waypoint ui                    # browse decisions at http://localhost:4173
 
