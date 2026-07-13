@@ -146,7 +146,11 @@ export function distillSession(session: ParsedSession, options: DistillOptions =
 
     child.on("error", (err) => {
       clearTimeout(timer);
-      resolve({ ok: false, decisions: [], error: err.message });
+      const error =
+        (err as NodeJS.ErrnoException).code === "ENOENT"
+          ? "couldn't find the `claude` command — is Claude Code installed and on your PATH?"
+          : err.message;
+      resolve({ ok: false, decisions: [], error });
     });
 
     child.on("close", (code) => {

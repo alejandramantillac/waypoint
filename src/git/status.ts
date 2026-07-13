@@ -1,14 +1,22 @@
 import { execFileSync } from "node:child_process";
 
+const gitRepoCache = new Map<string, boolean>();
+
 export function isGitRepo(cwd: string): boolean {
+  const cached = gitRepoCache.get(cwd);
+  if (cached !== undefined) return cached;
+
+  let result: boolean;
   try {
     execFileSync("git", ["-C", cwd, "rev-parse", "--is-inside-work-tree"], {
       stdio: ["ignore", "pipe", "ignore"],
     });
-    return true;
+    result = true;
   } catch {
-    return false;
+    result = false;
   }
+  gitRepoCache.set(cwd, result);
+  return result;
 }
 
 /** Non-empty `git log` output for a path after isoDate means it changed after that date. */

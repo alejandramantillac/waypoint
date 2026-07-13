@@ -5,7 +5,7 @@ export async function runSetup(): Promise<void> {
   const cliPath = fileURLToPath(new URL("../cli.js", import.meta.url));
 
   try {
-    execFileSync("claude", ["mcp", "remove", "waypoint", "-s", "local"], { stdio: "ignore" });
+    execFileSync("claude", ["mcp", "remove", "waypoint", "--scope", "user"], { stdio: "ignore" });
   } catch {
   }
 
