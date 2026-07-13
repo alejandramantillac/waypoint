@@ -15,7 +15,7 @@ import {
 } from "../db/database.js";
 import { annotateWithGitStatus } from "../git/status.js";
 import { renderPage, type SearchResultItem } from "../ui/render.js";
-import { toLocalDay } from "../util/dates.js";
+import { toLocalDay, isValidDateString } from "../util/dates.js";
 
 const DEFAULT_PORT = 4173;
 const GROUP_PAGE_SIZE = 20;
@@ -62,8 +62,10 @@ export async function runUi(args: string[]): Promise<void> {
     const view = query.get("group") === "day" ? "day" : "session";
     const q = (query.get("q") ?? "").trim();
     const stale = query.get("stale") === "1";
-    const since = query.get("since") || undefined;
-    const until = query.get("until") || undefined;
+    const rawSince = query.get("since") || undefined;
+    const rawUntil = query.get("until") || undefined;
+    const since = rawSince && isValidDateString(rawSince) ? rawSince : undefined;
+    const until = rawUntil && isValidDateString(rawUntil) ? rawUntil : undefined;
     const requestedPage = parseInt(query.get("page") ?? "1", 10) || 1;
 
     const issues = listParserIssues(db);

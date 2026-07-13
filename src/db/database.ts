@@ -3,7 +3,7 @@ import { existsSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import type { ParsedSession } from "../parser/types.js";
 import { parseSessionFile } from "../parser/sessions.js";
-import { toLocalDay } from "../util/dates.js";
+import { toLocalDay, isParseableDate } from "../util/dates.js";
 
 export interface Decision {
   id: number;
@@ -229,11 +229,11 @@ export function listTimeline(
 ): Decision[] {
   const clauses: string[] = [];
   const params: string[] = [];
-  if (opts.since) {
+  if (opts.since && isParseableDate(opts.since)) {
     clauses.push("created_at >= ?");
     params.push(opts.since);
   }
-  if (opts.until) {
+  if (opts.until && isParseableDate(opts.until)) {
     clauses.push("created_at <= ?");
     params.push(opts.until);
   }
@@ -531,11 +531,11 @@ export function listImportedTimeline(
 ): ImportedDecision[] {
   const clauses: string[] = [];
   const params: string[] = [];
-  if (opts.since) {
+  if (opts.since && isParseableDate(opts.since)) {
     clauses.push("source_created_at >= ?");
     params.push(opts.since);
   }
-  if (opts.until) {
+  if (opts.until && isParseableDate(opts.until)) {
     clauses.push("source_created_at <= ?");
     params.push(opts.until);
   }
