@@ -62,6 +62,20 @@ waypoint import waypoint-export-2026-07-13.json   # merge a collaborator's decis
 
 Each project gets its own isolated `.waypoint/waypoint.db`, so decisions never mix across projects.
 
+## Using it as an MCP server
+
+`waypoint setup` already registers the server for every project on this machine, so most of the time there's nothing else to do. To confirm it's connected, run `claude mcp list` and look for `waypoint` in the output.
+
+From there, just ask. Open (or restart) a Claude Code session inside a project where you've already run `waypoint generate`, and ask something like "why was this built this way?" or "why did we choose X here?" without mentioning Waypoint. The agent should reach for it on its own; MCP tools are loaded lazily by Claude Code, so on rare occasions it may check the code first and need a nudge ("check the waypoint MCP") the first time in a session.
+
+To test the server directly, without depending on an agent deciding to use it, use the [MCP Inspector](https://modelcontextprotocol.io/docs/tools/inspector):
+
+```bash
+npx @modelcontextprotocol/inspector waypoint mcp
+```
+
+This opens a local web UI listing the three tools (`search_decisions`, `list_timeline`, `get_decisions_by_file`), where you can call each one directly with arguments and see the raw JSON response.
+
 ## How it works
 
 `waypoint generate` reads `~/.claude/projects/<encoded-project-path>/*.jsonl`, the same session history Claude Code already keeps locally, and pipes each new session's transcript to `claude -p` with a JSON schema that forces structured output. It only keeps decisions the model can back with a verbatim quote from the conversation; anything it can't cite gets dropped instead of reported.
