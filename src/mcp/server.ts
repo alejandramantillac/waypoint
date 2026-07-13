@@ -12,7 +12,7 @@ import {
   type Decision,
   type ImportedDecision,
 } from "../db/database.js";
-import { annotateWithGitStatus } from "../git/status.js";
+import { annotateWithGitStatus, createGitStatusCache } from "../git/status.js";
 
 interface AnnotatedResult {
   source: "local" | "imported";
@@ -25,8 +25,9 @@ function combineResults(
   local: Decision[],
   imported: ImportedDecision[],
 ): AnnotatedResult[] {
-  const annotatedLocal = annotateWithGitStatus(cwd, local).map((d) => ({ ...d, source: "local" as const }));
-  const annotatedImported = annotateWithGitStatus(cwd, imported, (d) => d.sourceCreatedAt).map((d) => ({
+  const cache = createGitStatusCache();
+  const annotatedLocal = annotateWithGitStatus(cwd, local, undefined, cache).map((d) => ({ ...d, source: "local" as const }));
+  const annotatedImported = annotateWithGitStatus(cwd, imported, (d) => d.sourceCreatedAt, cache).map((d) => ({
     ...d,
     source: "imported" as const,
     importedFrom: d.importedFrom,

@@ -1,9 +1,16 @@
 import { execFileSync } from "node:child_process";
 
-const gitRepoCache = new Map<string, boolean>();
+export interface GitStatusCache {
+  repo: Map<string, boolean>;
+  modified: Map<string, boolean>;
+}
 
-export function isGitRepo(cwd: string): boolean {
-  const cached = gitRepoCache.get(cwd);
+export function createGitStatusCache(): GitStatusCache {
+  return { repo: new Map(), modified: new Map() };
+}
+
+export function isGitRepo(cwd: string, cache: Map<string, boolean> = new Map()): boolean {
+  const cached = cache.get(cwd);
   if (cached !== undefined) return cached;
 
   let result: boolean;
@@ -15,7 +22,7 @@ export function isGitRepo(cwd: string): boolean {
   } catch {
     result = false;
   }
-  gitRepoCache.set(cwd, result);
+  cache.set(cwd, result);
   return result;
 }
 
@@ -42,24 +49,23 @@ interface HasFilesAffected {
   modifiedSinceDecision?: boolean | null;
 }
 
-const modifiedSinceCache = new Map<string, boolean>();
-
 export function annotateWithGitStatus<T extends HasFilesAffected>(
   cwd: string,
   decisions: T[],
   getDate: (d: T) => string = (d) =>
     (d as unknown as { createdAt: string }).createdAt,
+  cache: GitStatusCache = createGitStatusCache(),
 ): T[] {
-  if (!isGitRepo(cwd)) {
+  if (!isGitRepo(cwd, cache.repo)) {
     return decisions.map((d) => ({ ...d, modifiedSinceDecision: null }));
   }
 
   function fileModifiedSince(filePath: string, isoDate: string): boolean {
     const key = `${cwd}@@${filePath}@@${isoDate}`;
-    let result = modifiedSinceCache.get(key);
+    let result = cache.modified.get(key);
     if (result === undefined) {
       result = wasModifiedSince(cwd, filePath, isoDate);
-      modifiedSinceCache.set(key, result);
+      cache.modified.set(key, result);
     }
     return result;
   }

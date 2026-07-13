@@ -13,7 +13,7 @@ import {
   type ImportedDecision,
   type ImportedGroup,
 } from "../db/database.js";
-import { annotateWithGitStatus } from "../git/status.js";
+import { annotateWithGitStatus, createGitStatusCache, type GitStatusCache } from "../git/status.js";
 import { renderPage, type SearchResultItem } from "../ui/render.js";
 import { toLocalDay, isValidDateString } from "../util/dates.js";
 
@@ -24,9 +24,10 @@ const DECISION_PAGE_SIZE = 10;
 function annotateGroups<D extends { filesAffected: string[]; modifiedSinceDecision?: boolean | null }, G extends { decisions: D[] }>(
   cwd: string,
   groups: G[],
+  cache: GitStatusCache,
   getDate?: (d: D) => string,
 ): G[] {
-  return groups.map((g) => ({ ...g, decisions: annotateWithGitStatus(cwd, g.decisions, getDate) }));
+  return groups.map((g) => ({ ...g, decisions: annotateWithGitStatus(cwd, g.decisions, getDate, cache) }));
 }
 
 function withinRange(dateStr: string, since?: string, until?: string): boolean {
@@ -69,6 +70,10 @@ export async function runUi(args: string[]): Promise<void> {
     const requestedPage = parseInt(query.get("page") ?? "1", 10) || 1;
 
     const issues = listParserIssues(db);
+    // One cache per request: shared across every group/decision annotated while
+    // handling this request, discarded once the response is sent — so a commit
+    // made between two page loads is picked up on the next load.
+    const gitCache = createGitStatusCache();
 
     const dateFilter = (d: Decision) => withinRange(d.createdAt, since, until);
     const importedDateFilter = (d: ImportedDecision) => withinRange(d.sourceCreatedAt, since, until);
@@ -77,8 +82,8 @@ export async function runUi(args: string[]): Promise<void> {
     let html: string;
 
     if (q) {
-      let local = annotateWithGitStatus(cwd, searchDecisions(db, q));
-      let imported = annotateWithGitStatus(cwd, searchImportedDecisions(db, q), (d) => d.sourceCreatedAt);
+      let local = annotateWithGitStatus(cwd, searchDecisions(db, q), undefined, gitCache);
+      let imported = annotateWithGitStatus(cwd, searchImportedDecisions(db, q), (d) => d.sourceCreatedAt, gitCache);
 
       if (since || until) {
         local = local.filter(dateFilter);
@@ -115,11 +120,12 @@ export async function runUi(args: string[]): Promise<void> {
     } else {
       let groups: SessionGroup[] | DayGroup[] =
         view === "day"
-          ? annotateGroups(cwd, listDecisionsGroupedByDay(db))
-          : annotateGroups(cwd, listDecisionsGroupedBySession(db));
+          ? annotateGroups(cwd, listDecisionsGroupedByDay(db), gitCache)
+          : annotateGroups(cwd, listDecisionsGroupedBySession(db), gitCache);
       let importedGroups = annotateGroups<ImportedDecision, ImportedGroup>(
         cwd,
         listImportedDecisionsGroupedByAuthor(db),
+        gitCache,
         (d) => d.sourceCreatedAt,
       );
 
