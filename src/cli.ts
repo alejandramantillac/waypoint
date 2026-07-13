@@ -5,11 +5,13 @@ import { runMcpCommand } from "./commands/mcp.js";
 import { runSetup } from "./commands/setup.js";
 import { runExport } from "./commands/export.js";
 import { runImport } from "./commands/import.js";
+import { runStatus } from "./commands/status.js";
 
 const HELP = `waypoint — distills architecture decisions from your Claude Code session history
 
 Usage:
   waypoint setup                       Register waypoint as an MCP server for all projects
+  waypoint status                      Preview sessions found, no cost (no claude -p calls)
   waypoint generate [--since <date>]   Distill new sessions into decisions
   waypoint ui                          Show decisions on localhost
   waypoint mcp                         Run a read-only MCP server over stdio
@@ -24,6 +26,9 @@ async function main() {
   switch (command) {
     case "setup":
       await runSetup();
+      break;
+    case "status":
+      await runStatus();
       break;
     case "generate":
       await runGenerate(rest);
