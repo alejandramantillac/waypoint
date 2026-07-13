@@ -2,6 +2,7 @@ import { DatabaseSync } from "node:sqlite";
 import { existsSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import type { ParsedSession } from "../parser/types.js";
+import { parseSessionFile } from "../parser/sessions.js";
 
 export interface Decision {
   id: number;
@@ -53,6 +54,22 @@ function migrate(db: DatabaseSync): void {
   try {
     db.exec(`ALTER TABLE processed_sessions ADD COLUMN started_at TEXT`);
   } catch {
+  }
+  backfillSessionMetadata(db);
+}
+
+function backfillSessionMetadata(db: DatabaseSync): void {
+  const rows = db
+    .prepare(`SELECT session_id, file_path FROM processed_sessions WHERE started_at IS NULL`)
+    .all() as { session_id: string; file_path: string }[];
+
+  if (rows.length === 0) return;
+
+  const update = db.prepare(`UPDATE processed_sessions SET title = ?, started_at = ? WHERE session_id = ?`);
+  for (const row of rows) {
+    const parsed = parseSessionFile(row.file_path);
+    if (!parsed) continue;
+    update.run(parsed.title, parsed.startedAt, row.session_id);
   }
 }
 
