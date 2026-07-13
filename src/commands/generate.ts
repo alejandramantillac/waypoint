@@ -76,7 +76,11 @@ export async function runGenerate(args: string[]): Promise<void> {
   }
 
   if (newSessions.length === 0) {
-    console.log("0 new sessions (everything found was already processed).");
+    console.log(
+      sessions.length === 0
+        ? "No sessions could be parsed for this project."
+        : "0 new sessions (everything found was already processed).",
+    );
     reportParserIssues(db, newSessions, unparseableFiles);
     return;
   }
