@@ -1,11 +1,14 @@
 {
-  "name": "waypoint",
+  "name": "waypoint-cli",
   "version": "0.1.0",
-  "description": "Destila decisiones de arquitectura enterradas en el historial de sesiones de Claude Code.",
+  "description": "Distills the architecture decisions buried in your coding agent's session history into a navigable log.",
+  "keywords": ["claude-code", "mcp", "cli", "architecture-decisions", "adr"],
+  "license": "MIT",
   "type": "module",
   "bin": {
     "waypoint": "./dist/cli.js"
   },
+  "files": ["dist"],
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "dev": "tsx src/cli.ts"
