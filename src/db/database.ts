@@ -45,6 +45,17 @@ CREATE TABLE IF NOT EXISTS decisions (
 CREATE INDEX IF NOT EXISTS idx_decisions_session_id ON decisions(session_id);
 `;
 
+function migrate(db: DatabaseSync): void {
+  try {
+    db.exec(`ALTER TABLE processed_sessions ADD COLUMN title TEXT`);
+  } catch {
+  }
+  try {
+    db.exec(`ALTER TABLE processed_sessions ADD COLUMN started_at TEXT`);
+  } catch {
+  }
+}
+
 /**
  * Each project has its own SQLite database in .waypoint/waypoint.db inside
  * the project: decisions from one project never mix with another's.
@@ -54,6 +65,7 @@ export function openDatabase(cwd: string): DatabaseSync {
   if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
   const db = new DatabaseSync(join(dir, "waypoint.db"));
   db.exec(SCHEMA);
+  migrate(db);
   return db;
 }
 
@@ -70,13 +82,22 @@ export function markSessionProcessed(
   status: "ok" | "error",
 ): void {
   db.prepare(
-    `INSERT INTO processed_sessions (session_id, file_path, processed_at, status)
-     VALUES (?, ?, ?, ?)
+    `INSERT INTO processed_sessions (session_id, file_path, processed_at, status, title, started_at)
+     VALUES (?, ?, ?, ?, ?, ?)
      ON CONFLICT(session_id) DO UPDATE SET
        file_path = excluded.file_path,
        processed_at = excluded.processed_at,
-       status = excluded.status`,
-  ).run(session.sessionId, session.filePath, new Date().toISOString(), status);
+       status = excluded.status,
+       title = excluded.title,
+       started_at = excluded.started_at`,
+  ).run(
+    session.sessionId,
+    session.filePath,
+    new Date().toISOString(),
+    status,
+    session.title,
+    session.startedAt,
+  );
 }
 
 export function insertDecisions(
@@ -108,6 +129,91 @@ export function listDecisions(db: DatabaseSync): Decision[] {
       `SELECT id, session_id, title, decision, why, discarded, files_affected, created_at
        FROM decisions ORDER BY created_at ASC`,
     )
+    .all() as Parameters<typeof rowToDecision>[0][];
+  return rows.map(rowToDecision);
+}
+
+function rowToDecision(r: {
+  id: number;
+  session_id: string;
+  title: string;
+  decision: string;
+  why: string;
+  discarded: string | null;
+  files_affected: string;
+  created_at: string;
+}): Decision {
+  return {
+    id: r.id,
+    sessionId: r.session_id,
+    title: r.title,
+    decision: r.decision,
+    why: r.why,
+    discarded: r.discarded,
+    filesAffected: JSON.parse(r.files_affected),
+    createdAt: r.created_at,
+  };
+}
+
+export function searchDecisions(db: DatabaseSync, keyword: string): Decision[] {
+  const like = `%${keyword}%`;
+  const rows = db
+    .prepare(
+      `SELECT id, session_id, title, decision, why, discarded, files_affected, created_at
+       FROM decisions
+       WHERE title LIKE ? OR decision LIKE ? OR why LIKE ? OR discarded LIKE ?
+       ORDER BY created_at ASC`,
+    )
+    .all(like, like, like, like) as Parameters<typeof rowToDecision>[0][];
+  return rows.map(rowToDecision);
+}
+
+export function listTimeline(
+  db: DatabaseSync,
+  opts: { since?: string; until?: string } = {},
+): Decision[] {
+  const clauses: string[] = [];
+  const params: string[] = [];
+  if (opts.since) {
+    clauses.push("created_at >= ?");
+    params.push(opts.since);
+  }
+  if (opts.until) {
+    clauses.push("created_at <= ?");
+    params.push(opts.until);
+  }
+  const where = clauses.length ? `WHERE ${clauses.join(" AND ")}` : "";
+  const rows = db
+    .prepare(
+      `SELECT id, session_id, title, decision, why, discarded, files_affected, created_at
+       FROM decisions ${where} ORDER BY created_at ASC`,
+    )
+    .all(...params) as Parameters<typeof rowToDecision>[0][];
+  return rows.map(rowToDecision);
+}
+
+export function getDecisionsByFile(db: DatabaseSync, path: string): Decision[] {
+  return listDecisions(db).filter((d) =>
+    d.filesAffected.some((f) => f.includes(path)),
+  );
+}
+
+export interface SessionGroup {
+  sessionId: string;
+  sessionTitle: string | null;
+  startedAt: string | null;
+  decisions: Decision[];
+}
+
+export function listDecisionsGroupedBySession(db: DatabaseSync): SessionGroup[] {
+  const rows = db
+    .prepare(
+      `SELECT d.id, d.session_id, d.title, d.decision, d.why, d.discarded, d.files_affected, d.created_at,
+              p.title AS session_title, p.started_at
+       FROM decisions d
+       JOIN processed_sessions p ON p.session_id = d.session_id
+       ORDER BY p.started_at ASC, d.created_at ASC`,
+    )
     .all() as {
     id: number;
     session_id: string;
@@ -117,16 +223,32 @@ export function listDecisions(db: DatabaseSync): Decision[] {
     discarded: string | null;
     files_affected: string;
     created_at: string;
+    session_title: string | null;
+    started_at: string | null;
   }[];
 
-  return rows.map((r) => ({
-    id: r.id,
-    sessionId: r.session_id,
-    title: r.title,
-    decision: r.decision,
-    why: r.why,
-    discarded: r.discarded,
-    filesAffected: JSON.parse(r.files_affected),
-    createdAt: r.created_at,
-  }));
+  const groups = new Map<string, SessionGroup>();
+  for (const r of rows) {
+    let group = groups.get(r.session_id);
+    if (!group) {
+      group = {
+        sessionId: r.session_id,
+        sessionTitle: r.session_title,
+        startedAt: r.started_at,
+        decisions: [],
+      };
+      groups.set(r.session_id, group);
+    }
+    group.decisions.push({
+      id: r.id,
+      sessionId: r.session_id,
+      title: r.title,
+      decision: r.decision,
+      why: r.why,
+      discarded: r.discarded,
+      filesAffected: JSON.parse(r.files_affected),
+      createdAt: r.created_at,
+    });
+  }
+  return [...groups.values()];
 }

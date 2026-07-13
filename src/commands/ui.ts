@@ -1,5 +1,5 @@
 import { createServer } from "node:http";
-import { openDatabase, listDecisions } from "../db/database.js";
+import { openDatabase, listDecisionsGroupedBySession } from "../db/database.js";
 import { renderPage } from "../ui/render.js";
 
 const DEFAULT_PORT = 4173;
@@ -9,9 +9,9 @@ export async function runUi(args: string[]): Promise<void> {
   const db = openDatabase(cwd);
 
   const server = createServer((req, res) => {
-    const decisions = listDecisions(db);
+    const groups = listDecisionsGroupedBySession(db);
     res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
-    res.end(renderPage(decisions));
+    res.end(renderPage(groups));
   });
 
   await new Promise<void>((resolve, reject) => {
