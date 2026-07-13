@@ -6,12 +6,37 @@ import {
   searchDecisions,
   listTimeline,
   getDecisionsByFile,
+  searchImportedDecisions,
+  listImportedTimeline,
+  getImportedDecisionsByFile,
   type Decision,
+  type ImportedDecision,
 } from "../db/database.js";
+import { annotateWithGitStatus } from "../git/status.js";
 
-function toolResult(decisions: Decision[]) {
+interface AnnotatedResult {
+  source: "local" | "imported";
+  importedFrom?: string;
+  [key: string]: unknown;
+}
+
+function combineResults(
+  cwd: string,
+  local: Decision[],
+  imported: ImportedDecision[],
+): AnnotatedResult[] {
+  const annotatedLocal = annotateWithGitStatus(cwd, local).map((d) => ({ ...d, source: "local" as const }));
+  const annotatedImported = annotateWithGitStatus(cwd, imported, (d) => d.sourceCreatedAt).map((d) => ({
+    ...d,
+    source: "imported" as const,
+    importedFrom: d.importedFrom,
+  }));
+  return [...annotatedLocal, ...annotatedImported];
+}
+
+function toolResult(results: AnnotatedResult[]) {
   return {
-    content: [{ type: "text" as const, text: JSON.stringify(decisions, null, 2) }],
+    content: [{ type: "text" as const, text: JSON.stringify(results, null, 2) }],
   };
 }
 
@@ -46,7 +71,7 @@ export async function runMcp(): Promise<void> {
     },
     async ({ keyword }) => {
       const db = openDatabase(cwd);
-      return toolResult(searchDecisions(db, keyword));
+      return toolResult(combineResults(cwd, searchDecisions(db, keyword), searchImportedDecisions(db, keyword)));
     },
   );
 
@@ -64,7 +89,9 @@ export async function runMcp(): Promise<void> {
     },
     async ({ since, until }) => {
       const db = openDatabase(cwd);
-      return toolResult(listTimeline(db, { since, until }));
+      return toolResult(
+        combineResults(cwd, listTimeline(db, { since, until }), listImportedTimeline(db, { since, until })),
+      );
     },
   );
 
@@ -79,7 +106,7 @@ export async function runMcp(): Promise<void> {
     },
     async ({ path }) => {
       const db = openDatabase(cwd);
-      return toolResult(getDecisionsByFile(db, path));
+      return toolResult(combineResults(cwd, getDecisionsByFile(db, path), getImportedDecisionsByFile(db, path)));
     },
   );
 

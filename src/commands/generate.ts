@@ -5,21 +5,37 @@ import {
   getProcessedSessionIds,
   markSessionProcessed,
   insertDecisions,
+  insertParserIssue,
 } from "../db/database.js";
+import type { DatabaseSync } from "node:sqlite";
 
 function reportParserIssues(
-  sessions: { sessionId: string; title: string | null; skippedLines: number }[],
+  db: DatabaseSync,
+  sessions: { sessionId: string; filePath: string; title: string | null; skippedLines: number }[],
   unparseableFiles: string[],
 ): void {
   for (const session of sessions) {
     if (session.skippedLines > 0) {
+      const detail = `${session.skippedLines} line(s) skipped due to invalid format`;
       console.log(
         `  ⚠ ${session.skippedLines} line(s) skipped in session ${session.title ?? session.sessionId} due to invalid format`,
       );
+      insertParserIssue(db, {
+        sessionId: session.sessionId,
+        filePath: session.filePath,
+        issueType: "skipped_lines",
+        detail,
+      });
     }
   }
   for (const file of unparseableFiles) {
     console.log(`  ⚠ 1 session could not be read: ${file}`);
+    insertParserIssue(db, {
+      sessionId: null,
+      filePath: file,
+      issueType: "unparseable_file",
+      detail: "file could not be parsed",
+    });
   }
 }
 
@@ -51,7 +67,7 @@ export async function runGenerate(args: string[]): Promise<void> {
 
   if (newSessions.length === 0) {
     console.log("0 new sessions (everything found was already processed).");
-    reportParserIssues(newSessions, unparseableFiles);
+    reportParserIssues(db, newSessions, unparseableFiles);
     return;
   }
 
@@ -84,5 +100,5 @@ export async function runGenerate(args: string[]): Promise<void> {
         ? `, ${errorCount} sessions failed (will be retried)`
         : ""),
   );
-  reportParserIssues(newSessions, unparseableFiles);
+  reportParserIssues(db, newSessions, unparseableFiles);
 }

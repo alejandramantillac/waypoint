@@ -3,6 +3,8 @@ import { runGenerate } from "./commands/generate.js";
 import { runUi } from "./commands/ui.js";
 import { runMcpCommand } from "./commands/mcp.js";
 import { runSetup } from "./commands/setup.js";
+import { runExport } from "./commands/export.js";
+import { runImport } from "./commands/import.js";
 
 const HELP = `waypoint — distills architecture decisions from your Claude Code session history
 
@@ -11,6 +13,8 @@ Usage:
   waypoint generate [--since <date>]   Distill new sessions into decisions
   waypoint ui                          Show decisions on localhost
   waypoint mcp                         Run a read-only MCP server over stdio
+  waypoint export --author "<name>" [file]   Export this project's decisions to share
+  waypoint import <file>               Import a collaborator's exported decisions
   waypoint --help                      Show this help
 `;
 
@@ -29,6 +33,12 @@ async function main() {
       break;
     case "mcp":
       await runMcpCommand();
+      break;
+    case "export":
+      await runExport(rest);
+      break;
+    case "import":
+      await runImport(rest);
       break;
     case "--help":
     case "-h":
