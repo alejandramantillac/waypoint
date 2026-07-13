@@ -6,4 +6,5 @@ export interface ParsedSession {
   title: string | null;
   transcript: string;
   filesTouched: string[];
+  skippedLines: number;
 }

@@ -98,13 +98,15 @@ export function parseSessionFile(filePath: string): ParsedSession | null {
   let title: string | null = null;
   const transcriptLines: string[] = [];
   const filesTouched = new Set<string>();
+  let skippedLines = 0;
 
   for (const line of lines) {
     let event: RawEvent;
     try {
       event = JSON.parse(line);
     } catch {
-      continue; // corrupted/truncated line: skipped, doesn't discard the whole session
+      skippedLines++; // corrupted/truncated line: skipped, doesn't discard the whole session
+      continue;
     }
 
     if (event.sessionId && !sessionId) sessionId = event.sessionId;
@@ -134,24 +136,34 @@ export function parseSessionFile(filePath: string): ParsedSession | null {
     title,
     transcript: transcriptLines.join("\n\n"),
     filesTouched: [...filesTouched],
+    skippedLines,
   };
+}
+
+export interface GetSessionsResult {
+  sessions: ParsedSession[];
+  unparseableFiles: string[];
 }
 
 export function getSessionsForProject(
   cwd: string,
   opts: { since?: Date } = {},
-): ParsedSession[] {
+): GetSessionsResult {
   const projectDir = findProjectDir(cwd);
-  if (!projectDir) return [];
+  if (!projectDir) return { sessions: [], unparseableFiles: [] };
 
   const sessions: ParsedSession[] = [];
+  const unparseableFiles: string[] = [];
   for (const file of listSessionFiles(projectDir)) {
     const parsed = parseSessionFile(file);
-    if (!parsed) continue;
+    if (!parsed) {
+      unparseableFiles.push(file);
+      continue;
+    }
     if (opts.since && parsed.startedAt) {
       if (new Date(parsed.startedAt) < opts.since) continue;
     }
     sessions.push(parsed);
   }
-  return sessions;
+  return { sessions, unparseableFiles };
 }
