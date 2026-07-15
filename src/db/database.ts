@@ -26,6 +26,9 @@ export interface DecisionInput {
   discarded: string | null;
   filesAffected: string[];
   evidence: string;
+  /** Optional (not required) so object literals written before this task — e.g. in
+   * src/db/database.test.ts from Task 3 — keep type-checking without being revisited. */
+  supersedesCandidateId?: number | null;
 }
 
 export interface ReadOptions {
@@ -174,14 +177,15 @@ export function insertDecisions(
   db: DatabaseSync,
   sessionId: string,
   decisions: DecisionInput[],
-): void {
+): number[] {
   const insert = db.prepare(
     `INSERT INTO decisions (session_id, title, decision, why, discarded, files_affected, evidence, created_at)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
   );
   const now = new Date().toISOString();
+  const ids: number[] = [];
   for (const d of decisions) {
-    insert.run(
+    const result = insert.run(
       sessionId,
       d.title,
       d.decision,
@@ -191,7 +195,9 @@ export function insertDecisions(
       d.evidence,
       now,
     );
+    ids.push(Number(result.lastInsertRowid));
   }
+  return ids;
 }
 
 const DECISION_COLUMNS = "id, session_id, title, decision, why, discarded, files_affected, evidence, created_at";

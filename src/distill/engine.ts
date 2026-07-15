@@ -19,8 +19,9 @@ const JSON_SCHEMA = JSON.stringify({
           discarded: { type: ["string", "null"] },
           files_affected: { type: "array", items: { type: "string" } },
           evidence: { type: "string" },
+          supersedes_candidate_id: { type: ["integer", "null"] },
         },
-        required: ["title", "decision", "why", "discarded", "files_affected", "evidence"],
+        required: ["title", "decision", "why", "discarded", "files_affected", "evidence", "supersedes_candidate_id"],
       },
     },
   },
@@ -65,9 +66,25 @@ interface RawDecision {
   discarded?: unknown;
   files_affected?: unknown;
   evidence?: unknown;
+  supersedes_candidate_id?: unknown;
 }
 
-function normalizeDecision(raw: RawDecision, transcript: string): DecisionInput | null {
+export interface SupersessionCandidate {
+  id: number;
+  title: string;
+  decision: string;
+  filesAffected: string[];
+}
+
+export function buildCandidatesBlock(candidates: SupersessionCandidate[]): string {
+  if (candidates.length === 0) return "";
+  const lines = candidates.map((c) => `- id: ${c.id} — "${c.title}": ${c.decision} (files: ${c.filesAffected.join(", ")})`);
+  return `\n\nThese decisions were already recorded for files this session touches. If a new decision you find ` +
+    `supersedes/replaces one of these (the team's thinking moved on), set supersedes_candidate_id to its id. ` +
+    `Otherwise set it to null. Do not invent an id that isn't listed below.\n${lines.join("\n")}`;
+}
+
+export function normalizeDecision(raw: RawDecision, transcript: string): DecisionInput | null {
   if (
     typeof raw.title !== "string" ||
     typeof raw.decision !== "string" ||
@@ -91,6 +108,7 @@ function normalizeDecision(raw: RawDecision, transcript: string): DecisionInput 
       ? raw.files_affected.filter((f): f is string => typeof f === "string")
       : [],
     evidence: raw.evidence,
+    supersedesCandidateId: typeof raw.supersedes_candidate_id === "number" ? raw.supersedes_candidate_id : null,
   };
 }
 
@@ -112,7 +130,11 @@ export interface DistillOptions {
   model?: string;
 }
 
-export function distillSession(session: ParsedSession, options: DistillOptions = {}): Promise<DistillResult> {
+export function distillSession(
+  session: ParsedSession,
+  candidates: SupersessionCandidate[],
+  options: DistillOptions = {},
+): Promise<DistillResult> {
   return new Promise((resolve) => {
     if (!session.transcript.trim()) {
       resolve({ ok: true, decisions: [] });
@@ -121,7 +143,7 @@ export function distillSession(session: ParsedSession, options: DistillOptions =
 
     const args = [
       "-p",
-      PROMPT,
+      PROMPT + buildCandidatesBlock(candidates),
       "--output-format",
       "json",
       "--json-schema",
