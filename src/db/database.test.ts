@@ -82,3 +82,37 @@ test("undoRelation on a resolved conflict reverts it to unresolved, not a new st
     assert.equal(getSupersededKeys(db).has("imported:5"), false);
   });
 });
+
+test("resolveConflict with reversed order matches the original conflict", () => {
+  withTempProject((cwd) => {
+    const db = openDatabase(cwd);
+    // Add conflict with order: a=local:1, b=imported:5
+    addConflict(db, { source: "local", id: 1 }, { source: "imported", id: 5 });
+    let conflicts = listUnresolvedConflicts(db);
+    assert.equal(conflicts.length, 1);
+
+    // Resolve with reversed order: winner=imported:5, loser=local:1
+    // This tests the second OR clause in resolveConflict's SQL
+    resolveConflict(db, { source: "imported", id: 5 }, { source: "local", id: 1 });
+
+    // Conflict should be resolved
+    conflicts = listUnresolvedConflicts(db);
+    assert.equal(conflicts.length, 0);
+
+    // local:1 should be superseded (the loser)
+    assert.equal(getSupersededKeys(db).has("local:1"), true);
+
+    // Now test undoRelation to ensure the conflict can be un-resolved
+    const supersedeRows = db
+      .prepare(`SELECT id FROM decision_relations WHERE relation_type = 'supersedes'`)
+      .all() as { id: number }[];
+    assert.equal(supersedeRows.length, 1, "Should have exactly one supersedes relation");
+
+    undoRelation(db, supersedeRows[0].id);
+
+    // Conflict should be unresolved again
+    conflicts = listUnresolvedConflicts(db);
+    assert.equal(conflicts.length, 1);
+    assert.equal(getSupersededKeys(db).has("local:1"), false);
+  });
+});
