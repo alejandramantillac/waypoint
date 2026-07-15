@@ -1,10 +1,15 @@
 import { createServer } from "node:http";
 import {
   openDatabase,
+  listDecisions,
   listDecisionsGroupedBySession,
   listDecisionsGroupedByDay,
+  listImportedDecisions,
   listParserIssues,
   listImportedDecisionsGroupedByAuthor,
+  listUnresolvedConflicts,
+  resolveConflict,
+  undoRelation,
   searchDecisions,
   searchImportedDecisions,
   type SessionGroup,
@@ -14,7 +19,7 @@ import {
   type ImportedGroup,
 } from "../db/database.js";
 import { annotateWithGitStatus, createGitStatusCache, type GitStatusCache } from "../git/status.js";
-import { renderPage, type SearchResultItem } from "../ui/render.js";
+import { renderPage, type SearchResultItem, type ConflictView } from "../ui/render.js";
 import { toLocalDay, isValidDateString } from "../util/dates.js";
 import { runAutoImport, formatAutoImportSummary } from "../share/autoImport.js";
 
@@ -63,6 +68,30 @@ export async function runUi(args: string[]): Promise<void> {
   const server = createServer((req, res) => {
     const url = new URL(req.url ?? "/", "http://localhost");
     const query = url.searchParams;
+
+    const resolveConflictId = query.get("resolveConflict");
+    const winnerParam = query.get("winner"); // "local:3" or "imported:7"
+    if (resolveConflictId && winnerParam) {
+      const conflict = listUnresolvedConflicts(db).find((c) => c.id === Number(resolveConflictId));
+      if (conflict) {
+        const [winnerSource, winnerIdStr] = winnerParam.split(":");
+        const winner = { source: winnerSource as "local" | "imported", id: Number(winnerIdStr) };
+        const loser = winner.source === conflict.a.source && winner.id === conflict.a.id ? conflict.b : conflict.a;
+        resolveConflict(db, winner, loser);
+      }
+      res.writeHead(302, { Location: "/" });
+      res.end();
+      return;
+    }
+
+    const undoId = query.get("undoRelation");
+    if (undoId) {
+      undoRelation(db, Number(undoId));
+      res.writeHead(302, { Location: "/" });
+      res.end();
+      return;
+    }
+
     const view = query.get("group") === "day" ? "day" : "session";
     const q = (query.get("q") ?? "").trim();
     const stale = query.get("stale") === "1";
@@ -115,6 +144,7 @@ export async function runUi(args: string[]): Promise<void> {
         decisionsTotalCount: items.length,
         issues,
         importedGroups: [],
+        conflicts: [],
         query,
         page,
         totalPages,
@@ -144,6 +174,20 @@ export async function runUi(args: string[]): Promise<void> {
       const decisionsTotalCount = groups.reduce((sum, g) => sum + g.decisions.length, 0);
       const { slice, page, totalPages } = paginate<SessionGroup | DayGroup>(groups, requestedPage, GROUP_PAGE_SIZE);
 
+      const unresolvedConflicts = listUnresolvedConflicts(db);
+      const allLocal = listDecisions(db, { includeSuperseded: true });
+      const allImported = listImportedDecisions(db, { includeSuperseded: true });
+      const conflictViews: ConflictView[] = unresolvedConflicts
+        .map((c) => {
+          const resolve = (ref: { source: "local" | "imported"; id: number }) =>
+            ref.source === "local" ? allLocal.find((d) => d.id === ref.id) : allImported.find((d) => d.id === ref.id);
+          const a = resolve(c.a);
+          const b = resolve(c.b);
+          if (!a || !b) return null;
+          return { relationId: c.id, a: { ref: c.a, decision: a }, b: { ref: c.b, decision: b } };
+        })
+        .filter((c): c is ConflictView => c !== null);
+
       html = renderPage({
         view,
         groups: slice as SessionGroup[] | DayGroup[],
@@ -151,6 +195,7 @@ export async function runUi(args: string[]): Promise<void> {
         decisionsTotalCount,
         issues,
         importedGroups,
+        conflicts: conflictViews,
         query,
         page,
         totalPages,
