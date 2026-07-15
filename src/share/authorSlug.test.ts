@@ -45,3 +45,30 @@ test("returns null when not a git repo", () => {
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test("getAuthorSlug resolves from global config when there's no local override", () => {
+  const dir = mkdtempSync(join(tmpdir(), "waypoint-authorslug-global-"));
+  const globalConfigPath = join(dir, "global-gitconfig");
+  const originalGitConfigGlobal = process.env.GIT_CONFIG_GLOBAL;
+  try {
+    execFileSync("git", ["init", "-q"], { cwd: dir });
+    // Write an isolated "global" config file the child git process will use instead
+    // of the real ~/.gitconfig, so this test doesn't depend on (or corrupt) the
+    // actual developer's global git config.
+    execFileSync("git", ["config", "--file", globalConfigPath, "user.name", "Global Only"]);
+    execFileSync("git", ["config", "--file", globalConfigPath, "user.email", "global-only@example.com"]);
+
+    // Set GIT_CONFIG_GLOBAL so the git command inside gitConfigValue picks up the isolated global config
+    process.env.GIT_CONFIG_GLOBAL = globalConfigPath;
+    const slug = getAuthorSlug(dir);
+    assert.match(slug ?? "", /^global-only-[0-9a-f]{6}$/);
+  } finally {
+    // Restore the original GIT_CONFIG_GLOBAL value
+    if (originalGitConfigGlobal !== undefined) {
+      process.env.GIT_CONFIG_GLOBAL = originalGitConfigGlobal;
+    } else {
+      delete process.env.GIT_CONFIG_GLOBAL;
+    }
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
