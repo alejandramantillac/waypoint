@@ -11,6 +11,11 @@ import {
   undoRelation,
   getSupersededKeys,
   listUnresolvedConflicts,
+  insertDecisions,
+  markSessionProcessed,
+  listDecisions,
+  getDecisionsByFile,
+  getSupersessionCandidates,
 } from "./database.js";
 
 function withTempProject(fn: (cwd: string) => void) {
@@ -114,5 +119,38 @@ test("resolveConflict with reversed order matches the original conflict", () => 
     conflicts = listUnresolvedConflicts(db);
     assert.equal(conflicts.length, 1);
     assert.equal(getSupersededKeys(db).has("local:1"), false);
+  });
+});
+
+test("listDecisions excludes superseded decisions by default, includes them when asked", () => {
+  withTempProject((cwd) => {
+    const db = openDatabase(cwd);
+    markSessionProcessed(db, { sessionId: "s1", filePath: "/tmp/s1", startedAt: null, endedAt: null, title: "s1", transcript: "", filesTouched: [], skippedLines: 0 }, "ok");
+    insertDecisions(db, "s1", [
+      { title: "Use SQLite", decision: "d1", why: "w1", discarded: null, filesAffected: ["src/db.ts"], evidence: "e1" },
+      { title: "Use SQLite (revised)", decision: "d2", why: "w2", discarded: null, filesAffected: ["src/db.ts"], evidence: "e2" },
+    ]);
+    const [first, second] = listDecisions(db);
+    addSupersession(db, { source: "local", id: second.id }, { source: "local", id: first.id });
+
+    assert.deepEqual(listDecisions(db).map((d) => d.id), [second.id]);
+    assert.deepEqual(
+      listDecisions(db, { includeSuperseded: true }).map((d) => d.id).sort(),
+      [first.id, second.id].sort(),
+    );
+  });
+});
+
+test("getSupersessionCandidates matches by overlapping filesAffected, excludes already-superseded", () => {
+  withTempProject((cwd) => {
+    const db = openDatabase(cwd);
+    markSessionProcessed(db, { sessionId: "s1", filePath: "/tmp/s1", startedAt: null, endedAt: null, title: "s1", transcript: "", filesTouched: [], skippedLines: 0 }, "ok");
+    insertDecisions(db, "s1", [
+      { title: "A", decision: "d", why: "w", discarded: null, filesAffected: ["src/db.ts"], evidence: "e" },
+      { title: "B", decision: "d", why: "w", discarded: null, filesAffected: ["src/other.ts"], evidence: "e" },
+    ]);
+    const candidates = getSupersessionCandidates(db, ["src/db.ts"]);
+    assert.equal(candidates.length, 1);
+    assert.equal(candidates[0].title, "A");
   });
 });

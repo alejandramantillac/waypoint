@@ -28,6 +28,10 @@ export interface DecisionInput {
   evidence: string;
 }
 
+export interface ReadOptions {
+  includeSuperseded?: boolean;
+}
+
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS processed_sessions (
   session_id   TEXT PRIMARY KEY,
@@ -192,11 +196,22 @@ export function insertDecisions(
 
 const DECISION_COLUMNS = "id, session_id, title, decision, why, discarded, files_affected, evidence, created_at";
 
-export function listDecisions(db: DatabaseSync): Decision[] {
+function excludeSuperseded<T extends { id: number }>(
+  db: DatabaseSync,
+  source: DecisionSource,
+  rows: T[],
+  opts: ReadOptions,
+): T[] {
+  if (opts.includeSuperseded) return rows;
+  const superseded = getSupersededKeys(db);
+  return rows.filter((r) => !superseded.has(`${source}:${r.id}`));
+}
+
+export function listDecisions(db: DatabaseSync, opts: ReadOptions = {}): Decision[] {
   const rows = db
     .prepare(`SELECT ${DECISION_COLUMNS} FROM decisions ORDER BY created_at ASC`)
     .all() as Parameters<typeof rowToDecision>[0][];
-  return rows.map(rowToDecision);
+  return excludeSuperseded(db, "local", rows.map(rowToDecision), opts);
 }
 
 function rowToDecision(r: {
@@ -223,7 +238,7 @@ function rowToDecision(r: {
   };
 }
 
-export function searchDecisions(db: DatabaseSync, keyword: string): Decision[] {
+export function searchDecisions(db: DatabaseSync, keyword: string, opts: ReadOptions = {}): Decision[] {
   const like = `%${keyword}%`;
   const rows = db
     .prepare(
@@ -233,12 +248,12 @@ export function searchDecisions(db: DatabaseSync, keyword: string): Decision[] {
        ORDER BY created_at ASC`,
     )
     .all(like, like, like, like) as Parameters<typeof rowToDecision>[0][];
-  return rows.map(rowToDecision);
+  return excludeSuperseded(db, "local", rows.map(rowToDecision), opts);
 }
 
 export function listTimeline(
   db: DatabaseSync,
-  opts: { since?: string; until?: string } = {},
+  opts: { since?: string; until?: string; includeSuperseded?: boolean } = {},
 ): Decision[] {
   const clauses: string[] = [];
   const params: string[] = [];
@@ -254,13 +269,25 @@ export function listTimeline(
   const rows = db
     .prepare(`SELECT ${DECISION_COLUMNS} FROM decisions ${where} ORDER BY created_at ASC`)
     .all(...params) as Parameters<typeof rowToDecision>[0][];
-  return rows.map(rowToDecision);
+  return excludeSuperseded(db, "local", rows.map(rowToDecision), opts);
 }
 
-export function getDecisionsByFile(db: DatabaseSync, path: string): Decision[] {
-  return listDecisions(db).filter((d) =>
+export function getDecisionsByFile(db: DatabaseSync, path: string, opts: ReadOptions = {}): Decision[] {
+  return listDecisions(db, opts).filter((d) =>
     d.filesAffected.some((f) => f.includes(path)),
   );
+}
+
+export function getSupersessionCandidates(
+  db: DatabaseSync,
+  filesTouched: string[],
+): { id: number; title: string; decision: string; filesAffected: string[] }[] {
+  if (filesTouched.length === 0) return [];
+  const candidates = listDecisions(db)
+    .filter((d) => d.filesAffected.some((f) => filesTouched.includes(f)))
+    .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+    .slice(0, 20);
+  return candidates.map((d) => ({ id: d.id, title: d.title, decision: d.decision, filesAffected: d.filesAffected }));
 }
 
 export interface SessionGroup {
@@ -513,7 +540,7 @@ function rowToImportedDecision(r: {
   };
 }
 
-export function listImportedDecisions(db: DatabaseSync): ImportedDecision[] {
+export function listImportedDecisions(db: DatabaseSync, opts: ReadOptions = {}): ImportedDecision[] {
   const rows = db
     .prepare(
       `SELECT id, imported_from, imported_at, source_session_id, source_session_title, source_session_started_at,
@@ -521,10 +548,10 @@ export function listImportedDecisions(db: DatabaseSync): ImportedDecision[] {
        FROM imported_decisions ORDER BY imported_from ASC, source_created_at ASC`,
     )
     .all() as Parameters<typeof rowToImportedDecision>[0][];
-  return rows.map(rowToImportedDecision);
+  return excludeSuperseded(db, "imported", rows.map(rowToImportedDecision), opts);
 }
 
-export function searchImportedDecisions(db: DatabaseSync, keyword: string): ImportedDecision[] {
+export function searchImportedDecisions(db: DatabaseSync, keyword: string, opts: ReadOptions = {}): ImportedDecision[] {
   const like = `%${keyword}%`;
   const rows = db
     .prepare(
@@ -535,12 +562,12 @@ export function searchImportedDecisions(db: DatabaseSync, keyword: string): Impo
        ORDER BY source_created_at ASC`,
     )
     .all(like, like, like, like) as Parameters<typeof rowToImportedDecision>[0][];
-  return rows.map(rowToImportedDecision);
+  return excludeSuperseded(db, "imported", rows.map(rowToImportedDecision), opts);
 }
 
 export function listImportedTimeline(
   db: DatabaseSync,
-  opts: { since?: string; until?: string } = {},
+  opts: { since?: string; until?: string; includeSuperseded?: boolean } = {},
 ): ImportedDecision[] {
   const clauses: string[] = [];
   const params: string[] = [];
@@ -560,11 +587,11 @@ export function listImportedTimeline(
        FROM imported_decisions ${where} ORDER BY source_created_at ASC`,
     )
     .all(...params) as Parameters<typeof rowToImportedDecision>[0][];
-  return rows.map(rowToImportedDecision);
+  return excludeSuperseded(db, "imported", rows.map(rowToImportedDecision), opts);
 }
 
-export function getImportedDecisionsByFile(db: DatabaseSync, path: string): ImportedDecision[] {
-  return listImportedDecisions(db).filter((d) =>
+export function getImportedDecisionsByFile(db: DatabaseSync, path: string, opts: ReadOptions = {}): ImportedDecision[] {
+  return listImportedDecisions(db, opts).filter((d) =>
     d.filesAffected.some((f) => f.includes(path)),
   );
 }
