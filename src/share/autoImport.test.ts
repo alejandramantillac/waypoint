@@ -105,6 +105,31 @@ test("runAutoImport records a conflict between two different authors' imported d
   });
 });
 
+test("runAutoImport does not flag same-author decisions across scans as a conflict", () => {
+  withTempProject((cwd) => {
+    const db = openDatabase(cwd);
+
+    // D1 from author "andres-def456" is imported in scan 1.
+    appendToSharedFile(cwd, "andres-def456", [baseDecision]);
+    runAutoImport(cwd);
+    assert.equal(listImportedDecisions(db).length, 1);
+    assert.equal(listUnresolvedConflicts(db).length, 0);
+
+    // The SAME author later appends D2 (overlapping files) to their OWN shared file
+    // (e.g. via `waypoint generate` on their machine), and a later scan (after a
+    // `git pull`) picks it up. D1 is already imported (dedup skips re-insert); D2 is
+    // newly imported. D1 and D2 overlap in filesAffected but come from the same author,
+    // so this must never be recorded as an imported-vs-imported conflict.
+    appendToSharedFile(cwd, "andres-def456", [
+      { ...baseDecision, sessionId: "remote-s2", title: "Reconsider Postgres" },
+    ]);
+    runAutoImport(cwd);
+
+    assert.equal(listImportedDecisions(db).length, 2);
+    assert.equal(listUnresolvedConflicts(db).length, 0);
+  });
+});
+
 test("runAutoImport does not flag same-author decisions within the same scan as a conflict", () => {
   withTempProject((cwd) => {
     const db = openDatabase(cwd);
