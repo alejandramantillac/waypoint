@@ -16,6 +16,7 @@ import {
 import { annotateWithGitStatus, createGitStatusCache, type GitStatusCache } from "../git/status.js";
 import { renderPage, type SearchResultItem } from "../ui/render.js";
 import { toLocalDay, isValidDateString } from "../util/dates.js";
+import { runAutoImport, formatAutoImportSummary } from "../share/autoImport.js";
 
 const DEFAULT_PORT = 4173;
 const GROUP_PAGE_SIZE = 10;
@@ -55,6 +56,8 @@ function paginate<T>(items: T[], requestedPage: number, pageSize: number): { sli
 
 export async function runUi(args: string[]): Promise<void> {
   const cwd = process.cwd();
+  const summary = formatAutoImportSummary(runAutoImport(cwd));
+  if (summary) console.log(summary);
   const db = openDatabase(cwd);
 
   const server = createServer((req, res) => {

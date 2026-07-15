@@ -59,3 +59,9 @@ export function runAutoImport(cwd: string): AutoImportSummary[] {
 
   return summaries;
 }
+
+export function formatAutoImportSummary(summaries: AutoImportSummary[]): string | null {
+  const withNew = summaries.filter((s) => s.count > 0);
+  if (withNew.length === 0) return null;
+  return `Detectadas decisiones nuevas de: ${withNew.map((s) => `${s.importedFrom} (${s.count})`).join(", ")}`;
+}

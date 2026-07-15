@@ -13,6 +13,7 @@ import {
   type ImportedDecision,
 } from "../db/database.js";
 import { annotateWithGitStatus, createGitStatusCache } from "../git/status.js";
+import { runAutoImport, formatAutoImportSummary } from "../share/autoImport.js";
 
 interface AnnotatedResult {
   source: "local" | "imported";
@@ -43,6 +44,8 @@ function toolResult(results: AnnotatedResult[]) {
 
 export async function runMcp(): Promise<void> {
   const cwd = process.env.CLAUDE_PROJECT_DIR ?? process.cwd();
+  const summary = formatAutoImportSummary(runAutoImport(cwd));
+  if (summary) console.error(summary);
 
   const server = new McpServer(
     {
