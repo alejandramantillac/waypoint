@@ -9,6 +9,7 @@ import {
   searchImportedDecisions,
   listImportedTimeline,
   getImportedDecisionsByFile,
+  listUnresolvedConflicts,
   type Decision,
   type ImportedDecision,
 } from "../db/database.js";
@@ -21,17 +22,23 @@ interface AnnotatedResult {
   [key: string]: unknown;
 }
 
-function combineResults(
-  cwd: string,
-  local: Decision[],
-  imported: ImportedDecision[],
-): AnnotatedResult[] {
+function combineResults(cwd: string, local: Decision[], imported: ImportedDecision[]): AnnotatedResult[] {
   const cache = createGitStatusCache();
-  const annotatedLocal = annotateWithGitStatus(cwd, local, undefined, cache).map((d) => ({ ...d, source: "local" as const }));
+  const db = openDatabase(cwd);
+  const conflictedKeys = new Set(
+    listUnresolvedConflicts(db).flatMap((c) => [`${c.a.source}:${c.a.id}`, `${c.b.source}:${c.b.id}`]),
+  );
+
+  const annotatedLocal = annotateWithGitStatus(cwd, local, undefined, cache).map((d) => ({
+    ...d,
+    source: "local" as const,
+    hasUnresolvedConflict: conflictedKeys.has(`local:${d.id}`),
+  }));
   const annotatedImported = annotateWithGitStatus(cwd, imported, (d) => d.sourceCreatedAt, cache).map((d) => ({
     ...d,
     source: "imported" as const,
     importedFrom: d.importedFrom,
+    hasUnresolvedConflict: conflictedKeys.has(`imported:${d.id}`),
   }));
   return [...annotatedLocal, ...annotatedImported];
 }
