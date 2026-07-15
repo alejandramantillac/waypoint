@@ -76,6 +76,19 @@ CREATE TABLE IF NOT EXISTS imported_decisions (
   source_created_at       TEXT NOT NULL,
   content_hash            TEXT NOT NULL UNIQUE
 );
+
+CREATE TABLE IF NOT EXISTS decision_relations (
+  id            INTEGER PRIMARY KEY AUTOINCREMENT,
+  relation_type TEXT NOT NULL CHECK (relation_type IN ('supersedes', 'conflict')),
+  a_source      TEXT NOT NULL CHECK (a_source IN ('local', 'imported')),
+  a_id          INTEGER NOT NULL,
+  b_source      TEXT NOT NULL CHECK (b_source IN ('local', 'imported')),
+  b_id          INTEGER NOT NULL,
+  resolved_at   TEXT,
+  created_at    TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_decision_relations_b ON decision_relations(b_source, b_id);
 `;
 
 function migrate(db: DatabaseSync): void {
@@ -573,4 +586,100 @@ export function listImportedDecisionsGroupedByAuthor(db: DatabaseSync): Imported
     group.decisions.push(d);
   }
   return [...groups.values()];
+}
+
+export type DecisionSource = "local" | "imported";
+
+export interface DecisionRef {
+  source: DecisionSource;
+  id: number;
+}
+
+export interface ConflictRelation {
+  id: number;
+  a: DecisionRef;
+  b: DecisionRef;
+  createdAt: string;
+}
+
+function refKey(ref: DecisionRef): string {
+  return `${ref.source}:${ref.id}`;
+}
+
+export function addSupersession(db: DatabaseSync, winner: DecisionRef, loser: DecisionRef): void {
+  db.prepare(
+    `INSERT INTO decision_relations (relation_type, a_source, a_id, b_source, b_id, created_at)
+     VALUES ('supersedes', ?, ?, ?, ?, ?)`,
+  ).run(winner.source, winner.id, loser.source, loser.id, new Date().toISOString());
+}
+
+export function addConflict(db: DatabaseSync, a: DecisionRef, b: DecisionRef): void {
+  db.prepare(
+    `INSERT INTO decision_relations (relation_type, a_source, a_id, b_source, b_id, created_at)
+     VALUES ('conflict', ?, ?, ?, ?, ?)`,
+  ).run(a.source, a.id, b.source, b.id, new Date().toISOString());
+}
+
+export function resolveConflict(db: DatabaseSync, winner: DecisionRef, loser: DecisionRef): void {
+  const rows = db
+    .prepare(
+      `SELECT id FROM decision_relations
+       WHERE relation_type = 'conflict' AND resolved_at IS NULL
+         AND ((a_source = ? AND a_id = ? AND b_source = ? AND b_id = ?)
+           OR (a_source = ? AND a_id = ? AND b_source = ? AND b_id = ?))`,
+    )
+    .all(winner.source, winner.id, loser.source, loser.id, loser.source, loser.id, winner.source, winner.id) as {
+    id: number;
+  }[];
+  const now = new Date().toISOString();
+  for (const row of rows) {
+    db.prepare(`UPDATE decision_relations SET resolved_at = ? WHERE id = ?`).run(now, row.id);
+  }
+  addSupersession(db, winner, loser);
+}
+
+export function undoRelation(db: DatabaseSync, relationId: number): void {
+  const row = db
+    .prepare(`SELECT relation_type, a_source, a_id, b_source, b_id FROM decision_relations WHERE id = ?`)
+    .get(relationId) as
+    | { relation_type: string; a_source: DecisionSource; a_id: number; b_source: DecisionSource; b_id: number }
+    | undefined;
+  if (!row) return;
+
+  db.prepare(`DELETE FROM decision_relations WHERE id = ?`).run(relationId);
+
+  if (row.relation_type === "supersedes") {
+    // If this supersession came from resolving a conflict, revert that conflict to unresolved
+    // instead of leaving both decisions with no relation at all.
+    db.prepare(
+      `UPDATE decision_relations SET resolved_at = NULL
+       WHERE relation_type = 'conflict' AND resolved_at IS NOT NULL
+         AND ((a_source = ? AND a_id = ? AND b_source = ? AND b_id = ?)
+           OR (a_source = ? AND a_id = ? AND b_source = ? AND b_id = ?))`,
+    ).run(row.a_source, row.a_id, row.b_source, row.b_id, row.b_source, row.b_id, row.a_source, row.a_id);
+  }
+}
+
+export function getSupersededKeys(db: DatabaseSync): Set<string> {
+  const rows = db
+    .prepare(`SELECT b_source, b_id FROM decision_relations WHERE relation_type = 'supersedes'`)
+    .all() as { b_source: DecisionSource; b_id: number }[];
+  return new Set(rows.map((r) => refKey({ source: r.b_source, id: r.b_id })));
+}
+
+export function listUnresolvedConflicts(db: DatabaseSync): ConflictRelation[] {
+  const rows = db
+    .prepare(
+      `SELECT id, a_source, a_id, b_source, b_id, created_at
+       FROM decision_relations
+       WHERE relation_type = 'conflict' AND resolved_at IS NULL
+       ORDER BY created_at ASC`,
+    )
+    .all() as { id: number; a_source: DecisionSource; a_id: number; b_source: DecisionSource; b_id: number; created_at: string }[];
+  return rows.map((r) => ({
+    id: r.id,
+    a: { source: r.a_source, id: r.a_id },
+    b: { source: r.b_source, id: r.b_id },
+    createdAt: r.created_at,
+  }));
 }
