@@ -6,6 +6,7 @@ import { listOtherAuthorSharedFiles, readSharedFile } from "./sharedStore.js";
 export interface AutoImportSummary {
   importedFrom: string;
   count: number;
+  error?: string;
 }
 
 function overlapsExisting(
@@ -23,37 +24,50 @@ export function runAutoImport(cwd: string): AutoImportSummary[] {
   const summaries: AutoImportSummary[] = [];
 
   for (const { slug, path } of otherFiles) {
-    const file = readSharedFile(path);
-    const inputs: ImportedDecisionInput[] = file.decisions.map((d) => ({
-      importedFrom: file.exportedBy,
-      sourceSessionId: d.sessionId,
-      sourceSessionTitle: d.sessionTitle,
-      sourceSessionStartedAt: d.sessionStartedAt,
-      title: d.title,
-      decision: d.decision,
-      why: d.why,
-      discarded: d.discarded,
-      evidence: d.evidence,
-      filesAffected: d.filesAffected,
-      sourceCreatedAt: d.createdAt,
-      contentHash: contentHash(d.sessionId, d.title, d.decision, d.why),
-    }));
+    try {
+      const file = readSharedFile(path);
+      const inputs: ImportedDecisionInput[] = file.decisions.map((d) => ({
+        importedFrom: file.exportedBy,
+        sourceSessionId: d.sessionId,
+        sourceSessionTitle: d.sessionTitle,
+        sourceSessionStartedAt: d.sessionStartedAt,
+        title: d.title,
+        decision: d.decision,
+        why: d.why,
+        discarded: d.discarded,
+        evidence: d.evidence,
+        filesAffected: d.filesAffected,
+        sourceCreatedAt: d.createdAt,
+        contentHash: contentHash(d.sessionId, d.title, d.decision, d.why),
+      }));
 
-    const before = new Set(listImportedDecisions(db).map((d) => d.id));
-    const { inserted } = insertImportedDecisions(db, inputs);
-    summaries.push({ importedFrom: slug, count: inserted });
+      // Snapshot of imported decisions from OTHER authors' previously-processed files
+      // (earlier in this same scan, or from prior scans) — used both to compute which
+      // decisions are "new" from this file's insert, and as a comparison target so a
+      // newly-imported decision conflicting with a different author's already-imported
+      // decision gets flagged (spec 3.4: overlap with "own" OR "third party" decisions).
+      const beforeExisting = listImportedDecisions(db).map((d) => ({ id: d.id, filesAffected: d.filesAffected }));
+      const before = new Set(beforeExisting.map((d) => d.id));
+      const { inserted } = insertImportedDecisions(db, inputs);
+      summaries.push({ importedFrom: slug, count: inserted });
 
-    if (inserted > 0) {
-      const localExisting = listDecisions(db).map((d) => ({ id: d.id, filesAffected: d.filesAffected }));
-      const importedExisting = listImportedDecisions(db)
-        .filter((d) => !before.has(d.id))
-        .map((d) => ({ id: d.id, filesAffected: d.filesAffected }));
+      if (inserted > 0) {
+        const localExisting = listDecisions(db).map((d) => ({ id: d.id, filesAffected: d.filesAffected }));
+        const importedExisting = listImportedDecisions(db)
+          .filter((d) => !before.has(d.id))
+          .map((d) => ({ id: d.id, filesAffected: d.filesAffected }));
 
-      for (const newImported of importedExisting) {
-        for (const localId of overlapsExisting(newImported.filesAffected, localExisting)) {
-          addConflict(db, { source: "local", id: localId }, { source: "imported", id: newImported.id });
+        for (const newImported of importedExisting) {
+          for (const localId of overlapsExisting(newImported.filesAffected, localExisting)) {
+            addConflict(db, { source: "local", id: localId }, { source: "imported", id: newImported.id });
+          }
+          for (const existingImportedId of overlapsExisting(newImported.filesAffected, beforeExisting)) {
+            addConflict(db, { source: "imported", id: existingImportedId }, { source: "imported", id: newImported.id });
+          }
         }
       }
+    } catch (err) {
+      summaries.push({ importedFrom: slug, count: 0, error: err instanceof Error ? err.message : String(err) });
     }
   }
 
@@ -62,6 +76,15 @@ export function runAutoImport(cwd: string): AutoImportSummary[] {
 
 export function formatAutoImportSummary(summaries: AutoImportSummary[]): string | null {
   const withNew = summaries.filter((s) => s.count > 0);
-  if (withNew.length === 0) return null;
-  return `Detectadas decisiones nuevas de: ${withNew.map((s) => `${s.importedFrom} (${s.count})`).join(", ")}`;
+  const withErrors = summaries.filter((s) => s.error);
+
+  const parts: string[] = [];
+  if (withNew.length > 0) {
+    parts.push(`Detectadas decisiones nuevas de: ${withNew.map((s) => `${s.importedFrom} (${s.count})`).join(", ")}`);
+  }
+  if (withErrors.length > 0) {
+    parts.push(withErrors.map((s) => `no se pudo leer ${s.importedFrom}.json: ${s.error}`).join("; "));
+  }
+
+  return parts.length > 0 ? parts.join("\n") : null;
 }

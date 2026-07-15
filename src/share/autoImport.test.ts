@@ -1,13 +1,13 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync, mkdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { openDatabase, markSessionProcessed, insertDecisions, listUnresolvedConflicts, listImportedDecisions } from "../db/database.js";
 import { appendToSharedFile } from "./sharedStore.js";
 import { getAuthorSlug } from "./authorSlug.js";
-import { runAutoImport } from "./autoImport.js";
+import { runAutoImport, formatAutoImportSummary } from "./autoImport.js";
 import type { ExportableDecision } from "../db/database.js";
 
 function withTempProject(fn: (cwd: string) => void) {
@@ -77,5 +77,79 @@ test("runAutoImport records a conflict when an imported decision's files overlap
 
     const conflicts = listUnresolvedConflicts(db);
     assert.equal(conflicts.length, 1);
+  });
+});
+
+test("runAutoImport records a conflict between two different authors' imported decisions (imported-vs-imported)", () => {
+  withTempProject((cwd) => {
+    const db = openDatabase(cwd);
+
+    // Author A's decision is imported in a prior scan.
+    appendToSharedFile(cwd, "author-a-111111", [baseDecision]);
+    runAutoImport(cwd);
+    assert.equal(listImportedDecisions(db).length, 1);
+
+    // Author B's decision (a different session/author) touches the same file and is
+    // imported in a LATER scan — this must be flagged as a conflict against author A's
+    // already-imported decision, not just against local decisions.
+    appendToSharedFile(cwd, "author-b-222222", [
+      { ...baseDecision, sessionId: "remote-s2", title: "Use MySQL instead" },
+    ]);
+    runAutoImport(cwd);
+
+    assert.equal(listImportedDecisions(db).length, 2);
+    const conflicts = listUnresolvedConflicts(db);
+    assert.equal(conflicts.length, 1);
+    assert.equal(conflicts[0].a.source, "imported");
+    assert.equal(conflicts[0].b.source, "imported");
+  });
+});
+
+test("runAutoImport does not flag same-author decisions within the same scan as a conflict", () => {
+  withTempProject((cwd) => {
+    const db = openDatabase(cwd);
+
+    // Two decisions from the SAME author's file, imported together in one scan, that
+    // share a file: this is same-author supersession territory, not a cross-author
+    // conflict, so it must not add noise.
+    appendToSharedFile(cwd, "andres-def456", [
+      baseDecision,
+      { ...baseDecision, sessionId: "remote-s2", title: "Reconsider Postgres" },
+    ]);
+    runAutoImport(cwd);
+
+    assert.equal(listImportedDecisions(db).length, 2);
+    assert.equal(listUnresolvedConflicts(db).length, 0);
+  });
+});
+
+test("runAutoImport skips a malformed shared file without aborting the whole scan", () => {
+  withTempProject((cwd) => {
+    const db = openDatabase(cwd);
+
+    // A corrupted/truncated shared file from one teammate (e.g. bad commit, unresolved
+    // git merge markers) must not prevent other teammates' valid files from importing.
+    const sharedDir = join(cwd, ".waypoint", "shared");
+    mkdirSync(sharedDir, { recursive: true });
+    writeFileSync(join(sharedDir, "broken-author-333333.json"), "{ not valid json <<<<<<< HEAD");
+
+    appendToSharedFile(cwd, "andres-def456", [baseDecision]);
+
+    const summary = runAutoImport(cwd);
+
+    const ok = summary.find((s) => s.importedFrom === "andres-def456");
+    assert.ok(ok, "expected the valid author's file to still be processed");
+    assert.equal(ok!.count, 1);
+
+    const broken = summary.find((s) => s.importedFrom === "broken-author-333333");
+    assert.ok(broken, "expected an entry for the broken file");
+    assert.equal(broken!.count, 0);
+    assert.ok(broken!.error, "expected an error message on the broken file's summary");
+
+    assert.equal(listImportedDecisions(db).length, 1);
+
+    const formatted = formatAutoImportSummary(summary);
+    assert.ok(formatted, "expected a formatted summary");
+    assert.match(formatted!, /no se pudo leer broken-author-333333\.json/);
   });
 });
