@@ -8,6 +8,7 @@ import {
   listParserIssues,
   listImportedDecisionsGroupedByAuthor,
   listUnresolvedConflicts,
+  listResolvedConflicts,
   resolveConflict,
   undoRelation,
   searchDecisions,
@@ -19,7 +20,7 @@ import {
   type ImportedGroup,
 } from "../db/database.js";
 import { annotateWithGitStatus, createGitStatusCache, type GitStatusCache } from "../git/status.js";
-import { renderPage, type SearchResultItem, type ConflictView } from "../ui/render.js";
+import { renderPage, type SearchResultItem, type ConflictView, type ResolvedConflictView } from "../ui/render.js";
 import { toLocalDay, isValidDateString } from "../util/dates.js";
 import { runAutoImport, formatAutoImportSummary } from "../share/autoImport.js";
 
@@ -145,6 +146,7 @@ export async function runUi(args: string[]): Promise<void> {
         issues,
         importedGroups: [],
         conflicts: [],
+        resolvedConflicts: [],
         query,
         page,
         totalPages,
@@ -188,6 +190,17 @@ export async function runUi(args: string[]): Promise<void> {
         })
         .filter((c): c is ConflictView => c !== null);
 
+      const resolvedConflictViews: ResolvedConflictView[] = listResolvedConflicts(db)
+        .map((c) => {
+          const resolve = (ref: { source: "local" | "imported"; id: number }) =>
+            ref.source === "local" ? allLocal.find((d) => d.id === ref.id) : allImported.find((d) => d.id === ref.id);
+          const winner = resolve(c.winner);
+          const loser = resolve(c.loser);
+          if (!winner || !loser) return null;
+          return { relationId: c.relationId, winner: { decision: winner }, loser: { decision: loser } };
+        })
+        .filter((c): c is ResolvedConflictView => c !== null);
+
       html = renderPage({
         view,
         groups: slice as SessionGroup[] | DayGroup[],
@@ -196,6 +209,7 @@ export async function runUi(args: string[]): Promise<void> {
         issues,
         importedGroups,
         conflicts: conflictViews,
+        resolvedConflicts: resolvedConflictViews,
         query,
         page,
         totalPages,

@@ -46,15 +46,20 @@ export function runAutoImport(cwd: string): AutoImportSummary[] {
       // decisions are "new" from this file's insert, and as a comparison target so a
       // newly-imported decision conflicting with a different author's already-imported
       // decision gets flagged (spec 3.4: overlap with "own" OR "third party" decisions).
-      // Decisions imported from the SAME author (`slug`) are excluded: if this author's
-      // shared file was scanned in a prior run and now has new decisions appended, the
-      // newly-imported decisions must never be compared against that same author's
+      // Decisions imported from the SAME author (`file.exportedBy`) are excluded: if this
+      // author's shared file was scanned in a prior run and now has new decisions appended,
+      // the newly-imported decisions must never be compared against that same author's
       // already-imported decisions — that's same-author supersession territory, not a
       // cross-author conflict, and isn't handled by this codebase.
+      // Compared against `file.exportedBy`, not the loop's `slug` (the file's name): every
+      // decision inserted from this file has `importedFrom` set to `file.exportedBy` below,
+      // so that's the value that actually identifies "this author" in the imported_decisions
+      // table — `slug` only matches it by coincidence when a file's name happens to equal
+      // its own exportedBy field.
       const allBeforeExisting = listImportedDecisions(db);
       const before = new Set(allBeforeExisting.map((d) => d.id));
       const beforeExisting = allBeforeExisting
-        .filter((d) => d.importedFrom !== slug)
+        .filter((d) => d.importedFrom !== file.exportedBy)
         .map((d) => ({ id: d.id, filesAffected: d.filesAffected }));
       const { inserted } = insertImportedDecisions(db, inputs);
       summaries.push({ importedFrom: slug, count: inserted });

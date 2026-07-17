@@ -716,3 +716,32 @@ export function listUnresolvedConflicts(db: DatabaseSync): ConflictRelation[] {
     createdAt: r.created_at,
   }));
 }
+
+export interface ResolvedConflict {
+  /** id of the 'supersedes' relation created by resolveConflict — pass this to undoRelation. */
+  relationId: number;
+  winner: DecisionRef;
+  loser: DecisionRef;
+  resolvedAt: string;
+}
+
+export function listResolvedConflicts(db: DatabaseSync): ResolvedConflict[] {
+  const rows = db
+    .prepare(
+      `SELECT s.id, s.a_source, s.a_id, s.b_source, s.b_id, c.resolved_at
+       FROM decision_relations s
+       JOIN decision_relations c
+         ON c.relation_type = 'conflict' AND c.resolved_at IS NOT NULL
+        AND ((c.a_source = s.a_source AND c.a_id = s.a_id AND c.b_source = s.b_source AND c.b_id = s.b_id)
+          OR (c.a_source = s.b_source AND c.a_id = s.b_id AND c.b_source = s.a_source AND c.b_id = s.a_id))
+       WHERE s.relation_type = 'supersedes'
+       ORDER BY c.resolved_at DESC`,
+    )
+    .all() as { id: number; a_source: DecisionSource; a_id: number; b_source: DecisionSource; b_id: number; resolved_at: string }[];
+  return rows.map((r) => ({
+    relationId: r.id,
+    winner: { source: r.a_source, id: r.a_id },
+    loser: { source: r.b_source, id: r.b_id },
+    resolvedAt: r.resolved_at,
+  }));
+}

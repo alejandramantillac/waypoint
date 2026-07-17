@@ -148,6 +148,44 @@ test("runAutoImport does not flag same-author decisions within the same scan as 
   });
 });
 
+test("runAutoImport does not flag same-author decisions when the file's exportedBy differs from its filename", () => {
+  withTempProject((cwd) => {
+    const db = openDatabase(cwd);
+
+    // The same-author check keys off `file.exportedBy`, not the shared file's name — a
+    // decision imported from a file named "andres-def456.json" whose exportedBy field is
+    // e.g. "Andres" (from `waypoint export --author "Andres"` dropped into .waypoint/shared/
+    // by hand, or a renamed file) must still be recognized as the same author across scans.
+    const dir = join(cwd, ".waypoint", "shared");
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(
+      join(dir, "andres-def456.json"),
+      JSON.stringify({
+        version: 1,
+        exportedBy: "Andres",
+        exportedAt: new Date().toISOString(),
+        decisions: [baseDecision],
+      }),
+    );
+    runAutoImport(cwd);
+    assert.equal(listUnresolvedConflicts(db).length, 0);
+
+    writeFileSync(
+      join(dir, "andres-def456.json"),
+      JSON.stringify({
+        version: 1,
+        exportedBy: "Andres",
+        exportedAt: new Date().toISOString(),
+        decisions: [baseDecision, { ...baseDecision, sessionId: "remote-s2", title: "Reconsider Postgres" }],
+      }),
+    );
+    runAutoImport(cwd);
+
+    assert.equal(listImportedDecisions(db).length, 2);
+    assert.equal(listUnresolvedConflicts(db).length, 0);
+  });
+});
+
 test("runAutoImport skips a malformed shared file without aborting the whole scan", () => {
   withTempProject((cwd) => {
     const db = openDatabase(cwd);
