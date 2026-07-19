@@ -7,4 +7,6 @@ export interface ParsedSession {
   transcript: string;
   filesTouched: string[];
   skippedLines: number;
+  bashToolCallCount: number;
+  turnCount: number;
 }
