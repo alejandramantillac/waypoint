@@ -12,7 +12,7 @@ export async function runImport(args: string[]): Promise<void> {
   try {
     raw = readFileSync(path, "utf-8");
   } catch (err) {
-    throw new Error(`could not read ${path}: ${err instanceof Error ? err.message : err}`);
+    throw new Error(`could not read ${path}: ${err instanceof Error ? err.message : err}`, { cause: err });
   }
 
   const file = parseExportFile(raw);

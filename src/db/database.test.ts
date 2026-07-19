@@ -14,7 +14,6 @@ import {
   insertDecisions,
   markSessionProcessed,
   listDecisions,
-  getDecisionsByFile,
   getSupersessionCandidates,
 } from "./database.js";
 

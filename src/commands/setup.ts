@@ -21,6 +21,7 @@ export async function runSetup(): Promise<void> {
   try {
     execFileSync("claude", ["mcp", "remove", "waypoint", "--scope", "user"], { stdio: "ignore" });
   } catch {
+    // nothing registered yet — fine, this is just cleanup before re-adding below
   }
 
   console.log("Registering waypoint as a global MCP server (available in every project)...\n");
