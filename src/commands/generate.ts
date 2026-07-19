@@ -95,6 +95,7 @@ export async function runGenerate(args: string[]): Promise<void> {
 
   let decisionsFound = 0;
   let processedCount = 0;
+  let skippedCount = 0;
   let errorCount = 0;
   const sessionIdsWithNewDecisions: string[] = [];
 
@@ -107,7 +108,6 @@ export async function runGenerate(args: string[]): Promise<void> {
 
     if (verdict?.wouldSkip && filterConfig.mode === "active") {
       console.log(`  ⏭ ${session.title ?? session.sessionId}: skipped (filter: ${verdict.reason})`);
-      markSessionProcessed(db, session, "ok");
       recordFilterAudit(db, {
         sessionId: session.sessionId,
         wouldSkip: true,
@@ -118,7 +118,7 @@ export async function runGenerate(args: string[]): Promise<void> {
         turnCount: session.turnCount,
         actualDecisionsFound: null,
       });
-      processedCount++;
+      skippedCount++;
       continue;
     }
 
@@ -163,6 +163,7 @@ export async function runGenerate(args: string[]): Promise<void> {
 
   console.log(
     `${processedCount} sessions processed, ${decisionsFound} decisions found` +
+      (skippedCount > 0 ? `, ${skippedCount} sessions skipped by filter (will be re-evaluated next run)` : "") +
       (errorCount > 0 ? `, ${errorCount} sessions failed (will be retried)` : ""),
   );
   reportParserIssues(db, newSessions, unparseableFiles);
