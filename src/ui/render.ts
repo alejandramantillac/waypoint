@@ -134,6 +134,59 @@ export type SearchResultItem =
   | { origin: "local"; decision: Decision }
   | { origin: "imported"; importedFrom: string; decision: ImportedDecision };
 
+export interface ConflictView {
+  relationId: number;
+  a: { ref: { source: "local" | "imported"; id: number }; decision: Decision | ImportedDecision };
+  b: { ref: { source: "local" | "imported"; id: number }; decision: Decision | ImportedDecision };
+}
+
+function refParam(ref: { source: "local" | "imported"; id: number }): string {
+  return `${ref.source}:${ref.id}`;
+}
+
+function renderConflict(c: ConflictView): string {
+  const side = (s: ConflictView["a"]) => `
+    <div class="conflict-side">
+      <p><strong>${escapeHtml(s.decision.title)}</strong></p>
+      <p>${escapeHtml(s.decision.decision)}</p>
+      <a class="btn btn-primary" href="/?resolveConflict=${c.relationId}&winner=${refParam(s.ref)}">Keep this one</a>
+    </div>`;
+  return `
+    <div class="conflict">
+      <p class="conflict-files">Conflicting decisions over overlapping files:</p>
+      ${side(c.a)}
+      ${side(c.b)}
+    </div>`;
+}
+
+function renderConflictsSection(conflicts: ConflictView[]): string {
+  if (conflicts.length === 0) return "";
+  return `
+    <h2>Unresolved conflicts (${conflicts.length})</h2>
+    ${conflicts.map(renderConflict).join("\n")}`;
+}
+
+export interface ResolvedConflictView {
+  relationId: number;
+  winner: { decision: Decision | ImportedDecision };
+  loser: { decision: Decision | ImportedDecision };
+}
+
+function renderResolvedConflict(c: ResolvedConflictView): string {
+  return `
+    <div class="conflict resolved">
+      <p class="conflict-files">Resolved: kept <strong>${escapeHtml(c.winner.decision.title)}</strong> over <strong>${escapeHtml(c.loser.decision.title)}</strong>.</p>
+      <a class="btn btn-secondary" href="/?undoRelation=${c.relationId}">Undo</a>
+    </div>`;
+}
+
+function renderResolvedConflictsSection(resolvedConflicts: ResolvedConflictView[]): string {
+  if (resolvedConflicts.length === 0) return "";
+  return `
+    <h2>Recently resolved (${resolvedConflicts.length})</h2>
+    ${resolvedConflicts.map(renderResolvedConflict).join("\n")}`;
+}
+
 function renderSearchResult(item: SearchResultItem): string {
   if (item.origin === "local") {
     return `<div class="search-result"><span class="origin">local</span>${renderDecision(item.decision)}</div>`;
@@ -204,6 +257,10 @@ export interface RenderPageOptions {
   decisionsTotalCount: number;
   issues: ParserIssue[];
   importedGroups: ImportedGroup[];
+  /** Unresolved cross-author conflicts to surface with a resolve action. Empty in search mode. */
+  conflicts: ConflictView[];
+  /** Conflicts resolved via the "Keep this one" action, surfaced with an undo action. Empty in search mode. */
+  resolvedConflicts: ResolvedConflictView[];
   query: URLSearchParams;
   page: number;
   totalPages: number;
@@ -212,7 +269,7 @@ export interface RenderPageOptions {
 }
 
 export function renderPage(opts: RenderPageOptions): string {
-  const { view, groups, groupsTotalCount, decisionsTotalCount, issues, importedGroups, query, page, totalPages, search } = opts;
+  const { view, groups, groupsTotalCount, decisionsTotalCount, issues, importedGroups, conflicts, resolvedConflicts, query, page, totalPages, search } = opts;
 
   const filtersActive = query.get("q") || query.get("since") || query.get("until") || query.get("stale") === "1";
 
@@ -593,6 +650,8 @@ export function renderPage(opts: RenderPageOptions): string {
   ${meta}
   ${body}
   ${renderPagination(query, page, totalPages)}
+  ${renderConflictsSection(conflicts)}
+  ${renderResolvedConflictsSection(resolvedConflicts)}
   ${importedSection}
   ${renderParserIssues(issues)}
   <footer class="site-footer">

@@ -6,6 +6,7 @@ import {
   listImportedDecisions,
   listParserIssues,
 } from "../db/database.js";
+import { runAutoImport, formatAutoImportSummary } from "../share/autoImport.js";
 
 function formatDateRange(dates: string[]): string {
   if (dates.length === 0) return "no dated sessions";
@@ -17,6 +18,8 @@ function formatDateRange(dates: string[]): string {
 
 export async function runStatus(): Promise<void> {
   const cwd = process.cwd();
+  const summary = formatAutoImportSummary(runAutoImport(cwd));
+  if (summary) console.log(summary + "\n");
   const db = openDatabase(cwd);
 
   const processedIds = getProcessedSessionIds(db);

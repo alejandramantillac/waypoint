@@ -26,6 +26,13 @@ export interface DecisionInput {
   discarded: string | null;
   filesAffected: string[];
   evidence: string;
+  /** Optional (not required) so object literals written before this task — e.g. in
+   * src/db/database.test.ts from Task 3 — keep type-checking without being revisited. */
+  supersedesCandidateId?: number | null;
+}
+
+export interface ReadOptions {
+  includeSuperseded?: boolean;
 }
 
 const SCHEMA = `
@@ -76,6 +83,19 @@ CREATE TABLE IF NOT EXISTS imported_decisions (
   source_created_at       TEXT NOT NULL,
   content_hash            TEXT NOT NULL UNIQUE
 );
+
+CREATE TABLE IF NOT EXISTS decision_relations (
+  id            INTEGER PRIMARY KEY AUTOINCREMENT,
+  relation_type TEXT NOT NULL CHECK (relation_type IN ('supersedes', 'conflict')),
+  a_source      TEXT NOT NULL CHECK (a_source IN ('local', 'imported')),
+  a_id          INTEGER NOT NULL,
+  b_source      TEXT NOT NULL CHECK (b_source IN ('local', 'imported')),
+  b_id          INTEGER NOT NULL,
+  resolved_at   TEXT,
+  created_at    TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_decision_relations_b ON decision_relations(b_source, b_id);
 `;
 
 function migrate(db: DatabaseSync): void {
@@ -157,14 +177,15 @@ export function insertDecisions(
   db: DatabaseSync,
   sessionId: string,
   decisions: DecisionInput[],
-): void {
+): number[] {
   const insert = db.prepare(
     `INSERT INTO decisions (session_id, title, decision, why, discarded, files_affected, evidence, created_at)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
   );
   const now = new Date().toISOString();
+  const ids: number[] = [];
   for (const d of decisions) {
-    insert.run(
+    const result = insert.run(
       sessionId,
       d.title,
       d.decision,
@@ -174,16 +195,29 @@ export function insertDecisions(
       d.evidence,
       now,
     );
+    ids.push(Number(result.lastInsertRowid));
   }
+  return ids;
 }
 
 const DECISION_COLUMNS = "id, session_id, title, decision, why, discarded, files_affected, evidence, created_at";
 
-export function listDecisions(db: DatabaseSync): Decision[] {
+function excludeSuperseded<T extends { id: number }>(
+  db: DatabaseSync,
+  source: DecisionSource,
+  rows: T[],
+  opts: ReadOptions,
+): T[] {
+  if (opts.includeSuperseded) return rows;
+  const superseded = getSupersededKeys(db);
+  return rows.filter((r) => !superseded.has(`${source}:${r.id}`));
+}
+
+export function listDecisions(db: DatabaseSync, opts: ReadOptions = {}): Decision[] {
   const rows = db
     .prepare(`SELECT ${DECISION_COLUMNS} FROM decisions ORDER BY created_at ASC`)
     .all() as Parameters<typeof rowToDecision>[0][];
-  return rows.map(rowToDecision);
+  return excludeSuperseded(db, "local", rows.map(rowToDecision), opts);
 }
 
 function rowToDecision(r: {
@@ -210,7 +244,7 @@ function rowToDecision(r: {
   };
 }
 
-export function searchDecisions(db: DatabaseSync, keyword: string): Decision[] {
+export function searchDecisions(db: DatabaseSync, keyword: string, opts: ReadOptions = {}): Decision[] {
   const like = `%${keyword}%`;
   const rows = db
     .prepare(
@@ -220,12 +254,12 @@ export function searchDecisions(db: DatabaseSync, keyword: string): Decision[] {
        ORDER BY created_at ASC`,
     )
     .all(like, like, like, like) as Parameters<typeof rowToDecision>[0][];
-  return rows.map(rowToDecision);
+  return excludeSuperseded(db, "local", rows.map(rowToDecision), opts);
 }
 
 export function listTimeline(
   db: DatabaseSync,
-  opts: { since?: string; until?: string } = {},
+  opts: { since?: string; until?: string; includeSuperseded?: boolean } = {},
 ): Decision[] {
   const clauses: string[] = [];
   const params: string[] = [];
@@ -241,13 +275,25 @@ export function listTimeline(
   const rows = db
     .prepare(`SELECT ${DECISION_COLUMNS} FROM decisions ${where} ORDER BY created_at ASC`)
     .all(...params) as Parameters<typeof rowToDecision>[0][];
-  return rows.map(rowToDecision);
+  return excludeSuperseded(db, "local", rows.map(rowToDecision), opts);
 }
 
-export function getDecisionsByFile(db: DatabaseSync, path: string): Decision[] {
-  return listDecisions(db).filter((d) =>
+export function getDecisionsByFile(db: DatabaseSync, path: string, opts: ReadOptions = {}): Decision[] {
+  return listDecisions(db, opts).filter((d) =>
     d.filesAffected.some((f) => f.includes(path)),
   );
+}
+
+export function getSupersessionCandidates(
+  db: DatabaseSync,
+  filesTouched: string[],
+): { id: number; title: string; decision: string; filesAffected: string[] }[] {
+  if (filesTouched.length === 0) return [];
+  const candidates = listDecisions(db)
+    .filter((d) => d.filesAffected.some((f) => filesTouched.includes(f)))
+    .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+    .slice(0, 20);
+  return candidates.map((d) => ({ id: d.id, title: d.title, decision: d.decision, filesAffected: d.filesAffected }));
 }
 
 export interface SessionGroup {
@@ -500,7 +546,7 @@ function rowToImportedDecision(r: {
   };
 }
 
-export function listImportedDecisions(db: DatabaseSync): ImportedDecision[] {
+export function listImportedDecisions(db: DatabaseSync, opts: ReadOptions = {}): ImportedDecision[] {
   const rows = db
     .prepare(
       `SELECT id, imported_from, imported_at, source_session_id, source_session_title, source_session_started_at,
@@ -508,10 +554,10 @@ export function listImportedDecisions(db: DatabaseSync): ImportedDecision[] {
        FROM imported_decisions ORDER BY imported_from ASC, source_created_at ASC`,
     )
     .all() as Parameters<typeof rowToImportedDecision>[0][];
-  return rows.map(rowToImportedDecision);
+  return excludeSuperseded(db, "imported", rows.map(rowToImportedDecision), opts);
 }
 
-export function searchImportedDecisions(db: DatabaseSync, keyword: string): ImportedDecision[] {
+export function searchImportedDecisions(db: DatabaseSync, keyword: string, opts: ReadOptions = {}): ImportedDecision[] {
   const like = `%${keyword}%`;
   const rows = db
     .prepare(
@@ -522,12 +568,12 @@ export function searchImportedDecisions(db: DatabaseSync, keyword: string): Impo
        ORDER BY source_created_at ASC`,
     )
     .all(like, like, like, like) as Parameters<typeof rowToImportedDecision>[0][];
-  return rows.map(rowToImportedDecision);
+  return excludeSuperseded(db, "imported", rows.map(rowToImportedDecision), opts);
 }
 
 export function listImportedTimeline(
   db: DatabaseSync,
-  opts: { since?: string; until?: string } = {},
+  opts: { since?: string; until?: string; includeSuperseded?: boolean } = {},
 ): ImportedDecision[] {
   const clauses: string[] = [];
   const params: string[] = [];
@@ -547,11 +593,11 @@ export function listImportedTimeline(
        FROM imported_decisions ${where} ORDER BY source_created_at ASC`,
     )
     .all(...params) as Parameters<typeof rowToImportedDecision>[0][];
-  return rows.map(rowToImportedDecision);
+  return excludeSuperseded(db, "imported", rows.map(rowToImportedDecision), opts);
 }
 
-export function getImportedDecisionsByFile(db: DatabaseSync, path: string): ImportedDecision[] {
-  return listImportedDecisions(db).filter((d) =>
+export function getImportedDecisionsByFile(db: DatabaseSync, path: string, opts: ReadOptions = {}): ImportedDecision[] {
+  return listImportedDecisions(db, opts).filter((d) =>
     d.filesAffected.some((f) => f.includes(path)),
   );
 }
@@ -573,4 +619,129 @@ export function listImportedDecisionsGroupedByAuthor(db: DatabaseSync): Imported
     group.decisions.push(d);
   }
   return [...groups.values()];
+}
+
+export type DecisionSource = "local" | "imported";
+
+export interface DecisionRef {
+  source: DecisionSource;
+  id: number;
+}
+
+export interface ConflictRelation {
+  id: number;
+  a: DecisionRef;
+  b: DecisionRef;
+  createdAt: string;
+}
+
+function refKey(ref: DecisionRef): string {
+  return `${ref.source}:${ref.id}`;
+}
+
+export function addSupersession(db: DatabaseSync, winner: DecisionRef, loser: DecisionRef): void {
+  db.prepare(
+    `INSERT INTO decision_relations (relation_type, a_source, a_id, b_source, b_id, created_at)
+     VALUES ('supersedes', ?, ?, ?, ?, ?)`,
+  ).run(winner.source, winner.id, loser.source, loser.id, new Date().toISOString());
+}
+
+export function addConflict(db: DatabaseSync, a: DecisionRef, b: DecisionRef): void {
+  db.prepare(
+    `INSERT INTO decision_relations (relation_type, a_source, a_id, b_source, b_id, created_at)
+     VALUES ('conflict', ?, ?, ?, ?, ?)`,
+  ).run(a.source, a.id, b.source, b.id, new Date().toISOString());
+}
+
+export function resolveConflict(db: DatabaseSync, winner: DecisionRef, loser: DecisionRef): void {
+  const rows = db
+    .prepare(
+      `SELECT id FROM decision_relations
+       WHERE relation_type = 'conflict' AND resolved_at IS NULL
+         AND ((a_source = ? AND a_id = ? AND b_source = ? AND b_id = ?)
+           OR (a_source = ? AND a_id = ? AND b_source = ? AND b_id = ?))`,
+    )
+    .all(winner.source, winner.id, loser.source, loser.id, loser.source, loser.id, winner.source, winner.id) as {
+    id: number;
+  }[];
+  const now = new Date().toISOString();
+  for (const row of rows) {
+    db.prepare(`UPDATE decision_relations SET resolved_at = ? WHERE id = ?`).run(now, row.id);
+  }
+  addSupersession(db, winner, loser);
+}
+
+export function undoRelation(db: DatabaseSync, relationId: number): void {
+  const row = db
+    .prepare(`SELECT relation_type, a_source, a_id, b_source, b_id FROM decision_relations WHERE id = ?`)
+    .get(relationId) as
+    | { relation_type: string; a_source: DecisionSource; a_id: number; b_source: DecisionSource; b_id: number }
+    | undefined;
+  if (!row) return;
+
+  db.prepare(`DELETE FROM decision_relations WHERE id = ?`).run(relationId);
+
+  if (row.relation_type === "supersedes") {
+    // If this supersession came from resolving a conflict, revert that conflict to unresolved
+    // instead of leaving both decisions with no relation at all.
+    db.prepare(
+      `UPDATE decision_relations SET resolved_at = NULL
+       WHERE relation_type = 'conflict' AND resolved_at IS NOT NULL
+         AND ((a_source = ? AND a_id = ? AND b_source = ? AND b_id = ?)
+           OR (a_source = ? AND a_id = ? AND b_source = ? AND b_id = ?))`,
+    ).run(row.a_source, row.a_id, row.b_source, row.b_id, row.b_source, row.b_id, row.a_source, row.a_id);
+  }
+}
+
+export function getSupersededKeys(db: DatabaseSync): Set<string> {
+  const rows = db
+    .prepare(`SELECT b_source, b_id FROM decision_relations WHERE relation_type = 'supersedes'`)
+    .all() as { b_source: DecisionSource; b_id: number }[];
+  return new Set(rows.map((r) => refKey({ source: r.b_source, id: r.b_id })));
+}
+
+export function listUnresolvedConflicts(db: DatabaseSync): ConflictRelation[] {
+  const rows = db
+    .prepare(
+      `SELECT id, a_source, a_id, b_source, b_id, created_at
+       FROM decision_relations
+       WHERE relation_type = 'conflict' AND resolved_at IS NULL
+       ORDER BY created_at ASC`,
+    )
+    .all() as { id: number; a_source: DecisionSource; a_id: number; b_source: DecisionSource; b_id: number; created_at: string }[];
+  return rows.map((r) => ({
+    id: r.id,
+    a: { source: r.a_source, id: r.a_id },
+    b: { source: r.b_source, id: r.b_id },
+    createdAt: r.created_at,
+  }));
+}
+
+export interface ResolvedConflict {
+  /** id of the 'supersedes' relation created by resolveConflict — pass this to undoRelation. */
+  relationId: number;
+  winner: DecisionRef;
+  loser: DecisionRef;
+  resolvedAt: string;
+}
+
+export function listResolvedConflicts(db: DatabaseSync): ResolvedConflict[] {
+  const rows = db
+    .prepare(
+      `SELECT s.id, s.a_source, s.a_id, s.b_source, s.b_id, c.resolved_at
+       FROM decision_relations s
+       JOIN decision_relations c
+         ON c.relation_type = 'conflict' AND c.resolved_at IS NOT NULL
+        AND ((c.a_source = s.a_source AND c.a_id = s.a_id AND c.b_source = s.b_source AND c.b_id = s.b_id)
+          OR (c.a_source = s.b_source AND c.a_id = s.b_id AND c.b_source = s.a_source AND c.b_id = s.a_id))
+       WHERE s.relation_type = 'supersedes'
+       ORDER BY c.resolved_at DESC`,
+    )
+    .all() as { id: number; a_source: DecisionSource; a_id: number; b_source: DecisionSource; b_id: number; resolved_at: string }[];
+  return rows.map((r) => ({
+    relationId: r.id,
+    winner: { source: r.a_source, id: r.a_id },
+    loser: { source: r.b_source, id: r.b_id },
+    resolvedAt: r.resolved_at,
+  }));
 }

@@ -6,7 +6,12 @@ import {
   markSessionProcessed,
   insertDecisions,
   insertParserIssue,
+  getSupersessionCandidates,
+  addSupersession,
+  listDecisionsForExport,
 } from "../db/database.js";
+import { getAuthorSlug } from "../share/authorSlug.js";
+import { appendToSharedFile } from "../share/sharedStore.js";
 import type { DatabaseSync } from "node:sqlite";
 
 function reportParserIssues(
@@ -88,31 +93,45 @@ export async function runGenerate(args: string[]): Promise<void> {
   let decisionsFound = 0;
   let processedCount = 0;
   let errorCount = 0;
+  const sessionIdsWithNewDecisions: string[] = [];
 
   for (const session of newSessions) {
-    const result = await distillSession(session, { model });
+    const candidates = getSupersessionCandidates(db, session.filesTouched);
+    const result = await distillSession(session, candidates, { model });
 
     if (!result.ok) {
       errorCount++;
-      console.error(
-        `  ✗ ${session.title ?? session.sessionId}: ${result.error}`,
-      );
+      console.error(`  ✗ ${session.title ?? session.sessionId}: ${result.error}`);
       continue;
     }
 
     markSessionProcessed(db, session, "ok");
     if (result.decisions.length > 0) {
-      insertDecisions(db, session.sessionId, result.decisions);
+      const ids = insertDecisions(db, session.sessionId, result.decisions);
+      result.decisions.forEach((d, i) => {
+        if (d.supersedesCandidateId != null && candidates.some((c) => c.id === d.supersedesCandidateId)) {
+          addSupersession(db, { source: "local", id: ids[i] }, { source: "local", id: d.supersedesCandidateId });
+        }
+      });
       decisionsFound += result.decisions.length;
+      sessionIdsWithNewDecisions.push(session.sessionId);
     }
     processedCount++;
   }
 
   console.log(
     `${processedCount} sessions processed, ${decisionsFound} decisions found` +
-      (errorCount > 0
-        ? `, ${errorCount} sessions failed (will be retried)`
-        : ""),
+      (errorCount > 0 ? `, ${errorCount} sessions failed (will be retried)` : ""),
   );
   reportParserIssues(db, newSessions, unparseableFiles);
+
+  if (decisionsFound > 0) {
+    const authorSlug = getAuthorSlug(cwd);
+    if (authorSlug) {
+      const allExportable = listDecisionsForExport(db);
+      const newlyExportable = allExportable.filter((d) => sessionIdsWithNewDecisions.includes(d.sessionId));
+      appendToSharedFile(cwd, authorSlug, newlyExportable);
+      console.log(`Wrote ${newlyExportable.length} decision(s) to .waypoint/shared/${authorSlug}.json — commit it to share with your team.`);
+    }
+  }
 }
