@@ -9,9 +9,12 @@ import {
   getSupersessionCandidates,
   addSupersession,
   listDecisionsForExport,
+  recordFilterAudit,
 } from "../db/database.js";
 import { getAuthorSlug } from "../share/authorSlug.js";
 import { appendToSharedFile } from "../share/sharedStore.js";
+import { readFilterConfig } from "../util/config.js";
+import { computeFilterVerdict } from "../distill/filter.js";
 import type { DatabaseSync } from "node:sqlite";
 
 function reportParserIssues(
@@ -95,8 +98,30 @@ export async function runGenerate(args: string[]): Promise<void> {
   let errorCount = 0;
   const sessionIdsWithNewDecisions: string[] = [];
 
+  const filterConfig = readFilterConfig(cwd);
+
   for (const session of newSessions) {
     const candidates = getSupersessionCandidates(db, session.filesTouched);
+    const verdict =
+      filterConfig.mode === "disabled" ? null : computeFilterVerdict(session, filterConfig.transcriptThreshold);
+
+    if (verdict?.wouldSkip && filterConfig.mode === "active") {
+      console.log(`  ⏭ ${session.title ?? session.sessionId}: skipped (filter: ${verdict.reason})`);
+      markSessionProcessed(db, session, "ok");
+      recordFilterAudit(db, {
+        sessionId: session.sessionId,
+        wouldSkip: true,
+        reason: verdict.reason,
+        transcriptLength: session.transcript.trim().length,
+        filesTouchedCount: session.filesTouched.length,
+        bashToolCallCount: session.bashToolCallCount,
+        turnCount: session.turnCount,
+        actualDecisionsFound: null,
+      });
+      processedCount++;
+      continue;
+    }
+
     const result = await distillSession(session, candidates, { model });
 
     if (!result.ok) {
@@ -117,6 +142,23 @@ export async function runGenerate(args: string[]): Promise<void> {
       sessionIdsWithNewDecisions.push(session.sessionId);
     }
     processedCount++;
+
+    if (verdict) {
+      recordFilterAudit(db, {
+        sessionId: session.sessionId,
+        wouldSkip: verdict.wouldSkip,
+        reason: verdict.reason,
+        transcriptLength: session.transcript.trim().length,
+        filesTouchedCount: session.filesTouched.length,
+        bashToolCallCount: session.bashToolCallCount,
+        turnCount: session.turnCount,
+        actualDecisionsFound: result.decisions.length,
+        decisionsEvidence:
+          verdict.wouldSkip && result.decisions.length > 0
+            ? result.decisions.map((d) => ({ title: d.title, evidence: d.evidence }))
+            : undefined,
+      });
+    }
   }
 
   console.log(
