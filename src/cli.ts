@@ -6,6 +6,7 @@ import { runSetup } from "./commands/setup.js";
 import { runExport } from "./commands/export.js";
 import { runImport } from "./commands/import.js";
 import { runStatus } from "./commands/status.js";
+import { runFilter } from "./commands/filter.js";
 
 const HELP = `waypoint — distills architecture decisions from your Claude Code session history
 
@@ -17,6 +18,9 @@ Usage:
   waypoint mcp                         Run a read-only MCP server over stdio
   waypoint export --author "<name>" [file]   Export this project's decisions to share
   waypoint import <file>               Import a collaborator's exported decisions
+  waypoint filter status               Show filter mode and shadow-mode accuracy (no cost)
+  waypoint filter enable|disable       Toggle the trivial-session filter (shadow mode by default)
+  waypoint filter activate|deactivate  Switch between shadow mode (observe only) and active (real skip)
   waypoint --help                      Show this help
 `;
 
@@ -44,6 +48,9 @@ async function main() {
       break;
     case "import":
       await runImport(rest);
+      break;
+    case "filter":
+      await runFilter(rest);
       break;
     case "--help":
     case "-h":

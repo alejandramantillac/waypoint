@@ -60,10 +60,11 @@ function summarizeToolUse(name: string, input: unknown): string {
   return name;
 }
 
-function extractTurnText(content: unknown): { text: string; files: string[] } {
+function extractTurnText(content: unknown): { text: string; files: string[]; bashToolCallCount: number } {
   const files: string[] = [];
-  if (typeof content === "string") return { text: content, files };
-  if (!Array.isArray(content)) return { text: "", files };
+  let bashToolCallCount = 0;
+  if (typeof content === "string") return { text: content, files, bashToolCallCount };
+  if (!Array.isArray(content)) return { text: "", files, bashToolCallCount };
 
   const parts: string[] = [];
   for (const block of content) {
@@ -77,10 +78,11 @@ function extractTurnText(content: unknown): { text: string; files: string[] } {
         const input = (b.input ?? {}) as Record<string, unknown>;
         if (typeof input.file_path === "string") files.push(input.file_path);
       }
+      if (b.name === "Bash") bashToolCallCount++;
     }
     // 'thinking' and 'tool_result' blocks are omitted: they're noise for distillation.
   }
-  return { text: parts.join("\n"), files };
+  return { text: parts.join("\n"), files, bashToolCallCount };
 }
 
 export function parseSessionFile(filePath: string): ParsedSession | null {
@@ -99,6 +101,8 @@ export function parseSessionFile(filePath: string): ParsedSession | null {
   const transcriptLines: string[] = [];
   const filesTouched = new Set<string>();
   let skippedLines = 0;
+  let bashToolCallCount = 0;
+  let turnCount = 0;
 
   for (const line of lines) {
     let event: RawEvent;
@@ -120,9 +124,13 @@ export function parseSessionFile(filePath: string): ParsedSession | null {
 
     if (event.type === "user" || event.type === "assistant") {
       const role = event.message?.role ?? event.type;
-      const { text, files } = extractTurnText(event.message?.content);
+      const { text, files, bashToolCallCount: bashCalls } = extractTurnText(event.message?.content);
       for (const f of files) filesTouched.add(f);
-      if (text.trim()) transcriptLines.push(`[${role}] ${text.trim()}`);
+      bashToolCallCount += bashCalls;
+      if (text.trim()) {
+        transcriptLines.push(`[${role}] ${text.trim()}`);
+        turnCount++;
+      }
     }
   }
 
@@ -137,6 +145,8 @@ export function parseSessionFile(filePath: string): ParsedSession | null {
     transcript: transcriptLines.join("\n\n"),
     filesTouched: [...filesTouched],
     skippedLines,
+    bashToolCallCount,
+    turnCount,
   };
 }
 
