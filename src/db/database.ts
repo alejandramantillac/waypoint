@@ -116,14 +116,17 @@ function migrate(db: DatabaseSync): void {
   try {
     db.exec(`ALTER TABLE processed_sessions ADD COLUMN title TEXT`);
   } catch {
+    // SQLite has no "ADD COLUMN IF NOT EXISTS" — ignore if the column already exists from a prior run
   }
   try {
     db.exec(`ALTER TABLE processed_sessions ADD COLUMN started_at TEXT`);
   } catch {
+    // SQLite has no "ADD COLUMN IF NOT EXISTS" — ignore if the column already exists from a prior run
   }
   try {
     db.exec(`ALTER TABLE decisions ADD COLUMN evidence TEXT NOT NULL DEFAULT ''`);
   } catch {
+    // SQLite has no "ADD COLUMN IF NOT EXISTS" — ignore if the column already exists from a prior run
   }
   backfillSessionMetadata(db);
 }

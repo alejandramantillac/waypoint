@@ -84,6 +84,10 @@ export function runAutoImport(cwd: string): AutoImportSummary[] {
     }
   }
 
+  // Closed explicitly rather than left for the process to reclaim: this function can run
+  // many times within one process (e.g. once per test), and on Windows an unclosed SQLite
+  // handle keeps the containing directory locked, breaking later cleanup.
+  db.close();
   return summaries;
 }
 

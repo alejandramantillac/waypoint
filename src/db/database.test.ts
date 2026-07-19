@@ -14,7 +14,6 @@ import {
   insertDecisions,
   markSessionProcessed,
   listDecisions,
-  getDecisionsByFile,
   getSupersessionCandidates,
   recordFilterAudit,
   getFilterAuditSummary,
@@ -36,6 +35,7 @@ test("addSupersession marks the loser as superseded", () => {
     const superseded = getSupersededKeys(db);
     assert.equal(superseded.has("local:1"), true);
     assert.equal(superseded.has("local:2"), false);
+    db.close();
   });
 });
 
@@ -52,6 +52,7 @@ test("addConflict is listed as unresolved until resolveConflict is called", () =
     conflicts = listUnresolvedConflicts(db);
     assert.equal(conflicts.length, 0);
     assert.equal(getSupersededKeys(db).has("imported:5"), true);
+    db.close();
   });
 });
 
@@ -70,6 +71,7 @@ test("undoRelation reverses a supersession", () => {
 
     const after = getSupersededKeys(db);
     assert.equal(after.has("local:1"), false);
+    db.close();
   });
 });
 
@@ -87,6 +89,7 @@ test("undoRelation on a resolved conflict reverts it to unresolved, not a new st
 
     assert.equal(listUnresolvedConflicts(db).length, 1);
     assert.equal(getSupersededKeys(db).has("imported:5"), false);
+    db.close();
   });
 });
 
@@ -121,6 +124,7 @@ test("resolveConflict with reversed order matches the original conflict", () => 
     conflicts = listUnresolvedConflicts(db);
     assert.equal(conflicts.length, 1);
     assert.equal(getSupersededKeys(db).has("local:1"), false);
+    db.close();
   });
 });
 
@@ -140,6 +144,7 @@ test("listDecisions excludes superseded decisions by default, includes them when
       listDecisions(db, { includeSuperseded: true }).map((d) => d.id).sort(),
       [first.id, second.id].sort(),
     );
+    db.close();
   });
 });
 
@@ -154,6 +159,7 @@ test("getSupersessionCandidates matches by overlapping filesAffected, excludes a
     const candidates = getSupersessionCandidates(db, ["src/db.ts"]);
     assert.equal(candidates.length, 1);
     assert.equal(candidates[0].title, "A");
+    db.close();
   });
 });
 
@@ -175,6 +181,7 @@ test("recordFilterAudit stores a would-skip verdict with a null actualDecisionsF
     assert.equal(summary.wouldSkipCount, 1);
     assert.equal(summary.unknownCount, 1);
     assert.equal(summary.falseNegativeCount, 0);
+    db.close();
   });
 });
 
@@ -195,6 +202,7 @@ test("recordFilterAudit derives falseNegative when a skipped-candidate session a
     const summary = getFilterAuditSummary(db);
     assert.equal(summary.falseNegativeCount, 1);
     assert.equal(summary.unknownCount, 0);
+    db.close();
   });
 });
 
@@ -215,6 +223,7 @@ test("recordFilterAudit does not count a non-skip verdict toward wouldSkipCount 
     assert.equal(summary.wouldSkipCount, 0);
     assert.equal(summary.falseNegativeCount, 0);
     assert.equal(summary.evaluated, 1);
+    db.close();
   });
 });
 
@@ -233,5 +242,6 @@ test("recordFilterAudit upserts on the same sessionId instead of duplicating", (
     recordFilterAudit(db, { ...base, wouldSkip: false, actualDecisionsFound: 1 });
     const summary = getFilterAuditSummary(db);
     assert.equal(summary.evaluated, 1);
+    db.close();
   });
 });

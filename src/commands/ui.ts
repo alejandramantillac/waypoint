@@ -60,7 +60,7 @@ function paginate<T>(items: T[], requestedPage: number, pageSize: number): { sli
   return { slice: items.slice(start, start + pageSize), page, totalPages };
 }
 
-export async function runUi(args: string[]): Promise<void> {
+export async function runUi(_args: string[]): Promise<void> {
   const cwd = process.cwd();
   const summary = formatAutoImportSummary(runAutoImport(cwd));
   if (summary) console.log(summary);
