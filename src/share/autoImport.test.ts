@@ -67,7 +67,7 @@ test("runAutoImport is idempotent (dedup via contentHash on rescan)", () => {
 test("runAutoImport records a conflict when an imported decision's files overlap an existing local decision", () => {
   withTempProject((cwd) => {
     const db = openDatabase(cwd);
-    markSessionProcessed(db, { sessionId: "local-s1", filePath: "/tmp/x", startedAt: null, endedAt: null, title: "local", transcript: "", filesTouched: [], skippedLines: 0 }, "ok");
+    markSessionProcessed(db, { sessionId: "local-s1", filePath: "/tmp/x", startedAt: null, endedAt: null, title: "local", transcript: "", filesTouched: [], skippedLines: 0, bashToolCallCount: 0, turnCount: 0 }, "ok");
     insertDecisions(db, "local-s1", [
       { title: "Use SQLite", decision: "d", why: "w", discarded: null, filesAffected: ["src/db.ts"], evidence: "e", supersedesCandidateId: null },
     ]);
