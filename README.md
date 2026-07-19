@@ -2,19 +2,20 @@
 
 # Waypoint
 
-Waypoint reads your local Claude Code session history and distills the architecture decisions buried in it: what was decided, why, and what was discarded. It runs retroactively over sessions you already have, so there's nothing to configure beforehand.
+Waypoint reads your local Claude Code session history and distills the architecture decisions buried in it: what was decided, why, and what was discarded. It runs retroactively over sessions you already have, so there's nothing to configure beforehand. Decisions sync across a team through git itself — no server, no account, no manual export step.
 
 ## Why
 
-Conversations with a coding agent are full of real engineering decisions, like choosing one library over another for a specific reason, that get buried in chat history the moment the session ends. Waypoint mines that history afterward and turns it into something you can read, search, and query later.
+Conversations with a coding agent are full of real engineering decisions, like choosing one library over another for a specific reason, that get buried in chat history the moment the session ends. Waypoint mines that history afterward and turns it into something you can read, search, and query later — and share with whoever else touches the same repo, since Claude Code sessions live only on the machine that created them.
 
 ## What it does
 
 - **`waypoint status`**: a free preview of how many sessions exist, how many are new, and what's already stored, so you know what to expect before running `generate` (which has a small cost, since it calls `claude -p`).
-- **`waypoint generate`**: scans this project's Claude Code sessions and distills the new ones into structured decisions (title, what was decided, why, what was discarded, files affected), stored in a local SQLite database isolated to this project.
-- **`waypoint ui`**: a local web page listing those decisions, grouped by session or by day, with each decision's supporting evidence and a warning if the related code has changed since the decision was made.
-- **`waypoint mcp`**: a read-only [MCP](https://modelcontextprotocol.io) server that lets any agent, Claude Code included, answer "why was this built this way?" on the spot instead of guessing from the code.
-- **`waypoint export` / `waypoint import`**: share distilled decisions with a collaborator on the same repo. Claude Code sessions live only on the machine that created them, so this is how two people working on the same project end up seeing each other's reasoning.
+- **`waypoint generate`**: scans this project's Claude Code sessions and distills the new ones into structured decisions (title, what was decided, why, what was discarded, files affected), stored in a local SQLite database isolated to this project. It also appends new decisions to `.waypoint/shared/<your-author-slug>.json` — commit that file and your team sees them too.
+- **`waypoint status` / `waypoint ui` / `waypoint mcp`**: on startup, these automatically pick up teammates' `.waypoint/shared/*.json` files that showed up via `git pull` — no manual import step for anyone working in the same repo.
+- **`waypoint ui`**: a local web page listing decisions, grouped by session or by day, with each decision's supporting evidence, a warning if the related code has changed since the decision was made, and unresolved conflicts surfaced with a one-click resolve (or undo) action.
+- **`waypoint mcp`**: a read-only [MCP](https://modelcontextprotocol.io) server that lets any agent, Claude Code included, answer "why was this built this way?" on the spot instead of guessing from the code. Results are annotated with `hasUnresolvedConflict` so an agent knows when a decision is contested rather than settled.
+- **`waypoint export` / `waypoint import`**: share distilled decisions outside of git — with someone on a different repo, or by hand (Slack, email). Same-repo teammates don't need this; auto-import covers that case.
 
 ## Install
 
@@ -62,6 +63,17 @@ waypoint import waypoint-export-2026-07-13.json   # merge a collaborator's decis
 
 Each project gets its own isolated `.waypoint/waypoint.db`, so decisions never mix across projects.
 
+## Team decision memory
+
+`waypoint generate` writes every new decision to an append-only, per-author file at `.waypoint/shared/<author-slug>.json` (the slug is derived from your `git config user.name`/`user.email`). Commit that file like any other change; when a teammate runs `waypoint status`, `waypoint ui`, or `waypoint mcp`, it's picked up automatically — no export/import round-trip needed within the same repo.
+
+Two things get tracked as decisions accumulate, both fully reversible from `waypoint ui`:
+
+- **Supersession** (same author, replacing their own earlier decision): detected inside the same `claude -p` call that distills a session — no extra LLM call. If a new decision replaces one already on record for a file the session touched, the old one is marked superseded and excluded from search, timeline, and file lookups by default, so both a person and an MCP-connected agent see only the current state, not every historical variant.
+- **Conflicts** (different authors, decisions touching the same file): detected deterministically by file overlap during auto-import — never by an LLM, and never auto-resolved. It shows up in `waypoint ui` for a person to pick a winner.
+
+Nothing is ever deleted. Both supersession and conflict resolution can be undone from the UI.
+
 ## Using it as an MCP server
 
 `waypoint setup` already registers the server for every project on this machine, so most of the time there's nothing else to do. To confirm it's connected, run `claude mcp list` and look for `waypoint` in the output.
@@ -80,13 +92,13 @@ This opens a local web UI listing the three tools (`search_decisions`, `list_tim
 
 `waypoint generate` reads `~/.claude/projects/<encoded-project-path>/*.jsonl`, the same session history Claude Code already keeps locally, and pipes each new session's transcript to `claude -p` with a JSON schema that forces structured output. It only keeps decisions the model can back with a verbatim quote from the conversation; anything it can't cite gets dropped instead of reported.
 
-Everything runs locally: no session data leaves your machine unless you explicitly run `waypoint export`.
+Everything runs locally: no session data leaves your machine unless you commit `.waypoint/shared/*.json` or explicitly run `waypoint export`. `waypoint setup` also appends a short pointer to `AGENTS.md` (if the project has one) so other agents know to check the MCP server.
 
 ## Requirements
 
 - Node.js ≥ 22.5 (uses the built-in `node:sqlite` module, so there are no native dependencies to compile)
 - [Claude Code](https://claude.com/claude-code) installed and authenticated
-- `git` (optional; enables the "modified since this decision" warning, and is skipped silently if the project isn't a git repo)
+- `git` (optional; enables the "modified since this decision" warning and team decision memory — `git config user.name`/`user.email` derive your author slug — and is skipped silently if the project isn't a git repo)
 
 ## Platform support
 
