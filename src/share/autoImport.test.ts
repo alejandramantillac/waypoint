@@ -52,6 +52,7 @@ test("runAutoImport imports decisions from other authors' shared files, not its 
     const summary = runAutoImport(cwd);
     assert.deepEqual(summary, [{ importedFrom: "andres-def456", count: 1 }]);
     assert.equal(listImportedDecisions(db).length, 1);
+    db.close();
   });
 });
 
@@ -77,6 +78,7 @@ test("runAutoImport records a conflict when an imported decision's files overlap
 
     const conflicts = listUnresolvedConflicts(db);
     assert.equal(conflicts.length, 1);
+    db.close();
   });
 });
 
@@ -102,6 +104,7 @@ test("runAutoImport records a conflict between two different authors' imported d
     assert.equal(conflicts.length, 1);
     assert.equal(conflicts[0].a.source, "imported");
     assert.equal(conflicts[0].b.source, "imported");
+    db.close();
   });
 });
 
@@ -127,6 +130,7 @@ test("runAutoImport does not flag same-author decisions across scans as a confli
 
     assert.equal(listImportedDecisions(db).length, 2);
     assert.equal(listUnresolvedConflicts(db).length, 0);
+    db.close();
   });
 });
 
@@ -145,6 +149,7 @@ test("runAutoImport does not flag same-author decisions within the same scan as 
 
     assert.equal(listImportedDecisions(db).length, 2);
     assert.equal(listUnresolvedConflicts(db).length, 0);
+    db.close();
   });
 });
 
@@ -183,6 +188,7 @@ test("runAutoImport does not flag same-author decisions when the file's exported
 
     assert.equal(listImportedDecisions(db).length, 2);
     assert.equal(listUnresolvedConflicts(db).length, 0);
+    db.close();
   });
 });
 
@@ -214,5 +220,6 @@ test("runAutoImport skips a malformed shared file without aborting the whole sca
     const formatted = formatAutoImportSummary(summary);
     assert.ok(formatted, "expected a formatted summary");
     assert.match(formatted!, /no se pudo leer broken-author-333333\.json/);
+    db.close();
   });
 });
