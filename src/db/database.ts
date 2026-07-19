@@ -96,6 +96,20 @@ CREATE TABLE IF NOT EXISTS decision_relations (
 );
 
 CREATE INDEX IF NOT EXISTS idx_decision_relations_b ON decision_relations(b_source, b_id);
+
+CREATE TABLE IF NOT EXISTS filter_audit (
+  session_id             TEXT PRIMARY KEY,
+  computed_at             TEXT NOT NULL,
+  would_skip              INTEGER NOT NULL,
+  reason                  TEXT NOT NULL,
+  transcript_length       INTEGER NOT NULL,
+  files_touched_count     INTEGER NOT NULL,
+  bash_tool_call_count    INTEGER NOT NULL,
+  turn_count              INTEGER NOT NULL,
+  actual_decisions_found  INTEGER,
+  false_negative          INTEGER,
+  decisions_evidence      TEXT
+);
 `;
 
 function migrate(db: DatabaseSync): void {
@@ -744,4 +758,77 @@ export function listResolvedConflicts(db: DatabaseSync): ResolvedConflict[] {
     loser: { source: r.b_source, id: r.b_id },
     resolvedAt: r.resolved_at,
   }));
+}
+
+export interface FilterAuditInput {
+  sessionId: string;
+  wouldSkip: boolean;
+  reason: string;
+  transcriptLength: number;
+  filesTouchedCount: number;
+  bashToolCallCount: number;
+  turnCount: number;
+  /** null when the session was skipped in active mode — no LLM call means no ground truth. */
+  actualDecisionsFound: number | null;
+  decisionsEvidence?: { title: string; evidence: string }[];
+}
+
+export function recordFilterAudit(db: DatabaseSync, input: FilterAuditInput): void {
+  const falseNegative =
+    input.actualDecisionsFound === null ? null : input.wouldSkip && input.actualDecisionsFound > 0 ? 1 : 0;
+
+  db.prepare(
+    `INSERT INTO filter_audit
+       (session_id, computed_at, would_skip, reason, transcript_length, files_touched_count,
+        bash_tool_call_count, turn_count, actual_decisions_found, false_negative, decisions_evidence)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+     ON CONFLICT(session_id) DO UPDATE SET
+       computed_at = excluded.computed_at,
+       would_skip = excluded.would_skip,
+       reason = excluded.reason,
+       transcript_length = excluded.transcript_length,
+       files_touched_count = excluded.files_touched_count,
+       bash_tool_call_count = excluded.bash_tool_call_count,
+       turn_count = excluded.turn_count,
+       actual_decisions_found = excluded.actual_decisions_found,
+       false_negative = excluded.false_negative,
+       decisions_evidence = excluded.decisions_evidence`,
+  ).run(
+    input.sessionId,
+    new Date().toISOString(),
+    input.wouldSkip ? 1 : 0,
+    input.reason,
+    input.transcriptLength,
+    input.filesTouchedCount,
+    input.bashToolCallCount,
+    input.turnCount,
+    input.actualDecisionsFound,
+    falseNegative,
+    input.decisionsEvidence ? JSON.stringify(input.decisionsEvidence) : null,
+  );
+}
+
+export interface FilterAuditSummary {
+  evaluated: number;
+  wouldSkipCount: number;
+  falseNegativeCount: number;
+  /** would_skip sessions with no ground truth (skipped for real in active mode) — can't confirm these weren't false negatives. */
+  unknownCount: number;
+}
+
+export function getFilterAuditSummary(db: DatabaseSync): FilterAuditSummary {
+  const rows = db
+    .prepare(`SELECT would_skip, false_negative, actual_decisions_found FROM filter_audit`)
+    .all() as { would_skip: number; false_negative: number | null; actual_decisions_found: number | null }[];
+
+  let wouldSkipCount = 0;
+  let falseNegativeCount = 0;
+  let unknownCount = 0;
+  for (const r of rows) {
+    if (!r.would_skip) continue;
+    wouldSkipCount++;
+    if (r.actual_decisions_found === null) unknownCount++;
+    else if (r.false_negative) falseNegativeCount++;
+  }
+  return { evaluated: rows.length, wouldSkipCount, falseNegativeCount, unknownCount };
 }

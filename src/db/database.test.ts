@@ -16,6 +16,8 @@ import {
   listDecisions,
   getDecisionsByFile,
   getSupersessionCandidates,
+  recordFilterAudit,
+  getFilterAuditSummary,
 } from "./database.js";
 
 function withTempProject(fn: (cwd: string) => void) {
@@ -125,7 +127,7 @@ test("resolveConflict with reversed order matches the original conflict", () => 
 test("listDecisions excludes superseded decisions by default, includes them when asked", () => {
   withTempProject((cwd) => {
     const db = openDatabase(cwd);
-    markSessionProcessed(db, { sessionId: "s1", filePath: "/tmp/s1", startedAt: null, endedAt: null, title: "s1", transcript: "", filesTouched: [], skippedLines: 0 }, "ok");
+    markSessionProcessed(db, { sessionId: "s1", filePath: "/tmp/s1", startedAt: null, endedAt: null, title: "s1", transcript: "", filesTouched: [], skippedLines: 0, bashToolCallCount: 0, turnCount: 0 }, "ok");
     insertDecisions(db, "s1", [
       { title: "Use SQLite", decision: "d1", why: "w1", discarded: null, filesAffected: ["src/db.ts"], evidence: "e1" },
       { title: "Use SQLite (revised)", decision: "d2", why: "w2", discarded: null, filesAffected: ["src/db.ts"], evidence: "e2" },
@@ -144,7 +146,7 @@ test("listDecisions excludes superseded decisions by default, includes them when
 test("getSupersessionCandidates matches by overlapping filesAffected, excludes already-superseded", () => {
   withTempProject((cwd) => {
     const db = openDatabase(cwd);
-    markSessionProcessed(db, { sessionId: "s1", filePath: "/tmp/s1", startedAt: null, endedAt: null, title: "s1", transcript: "", filesTouched: [], skippedLines: 0 }, "ok");
+    markSessionProcessed(db, { sessionId: "s1", filePath: "/tmp/s1", startedAt: null, endedAt: null, title: "s1", transcript: "", filesTouched: [], skippedLines: 0, bashToolCallCount: 0, turnCount: 0 }, "ok");
     insertDecisions(db, "s1", [
       { title: "A", decision: "d", why: "w", discarded: null, filesAffected: ["src/db.ts"], evidence: "e" },
       { title: "B", decision: "d", why: "w", discarded: null, filesAffected: ["src/other.ts"], evidence: "e" },
@@ -152,5 +154,84 @@ test("getSupersessionCandidates matches by overlapping filesAffected, excludes a
     const candidates = getSupersessionCandidates(db, ["src/db.ts"]);
     assert.equal(candidates.length, 1);
     assert.equal(candidates[0].title, "A");
+  });
+});
+
+test("recordFilterAudit stores a would-skip verdict with a null actualDecisionsFound", () => {
+  withTempProject((cwd) => {
+    const db = openDatabase(cwd);
+    recordFilterAudit(db, {
+      sessionId: "sess-1",
+      wouldSkip: true,
+      reason: "transcript<500 chars, 0 files touched, 0 bash calls",
+      transcriptLength: 42,
+      filesTouchedCount: 0,
+      bashToolCallCount: 0,
+      turnCount: 1,
+      actualDecisionsFound: null,
+    });
+    const summary = getFilterAuditSummary(db);
+    assert.equal(summary.evaluated, 1);
+    assert.equal(summary.wouldSkipCount, 1);
+    assert.equal(summary.unknownCount, 1);
+    assert.equal(summary.falseNegativeCount, 0);
+  });
+});
+
+test("recordFilterAudit derives falseNegative when a skipped-candidate session actually had decisions", () => {
+  withTempProject((cwd) => {
+    const db = openDatabase(cwd);
+    recordFilterAudit(db, {
+      sessionId: "sess-2",
+      wouldSkip: true,
+      reason: "transcript<500 chars, 0 files touched, 0 bash calls",
+      transcriptLength: 42,
+      filesTouchedCount: 0,
+      bashToolCallCount: 0,
+      turnCount: 1,
+      actualDecisionsFound: 2,
+      decisionsEvidence: [{ title: "Use SQLite", evidence: "we decided to use SQLite" }],
+    });
+    const summary = getFilterAuditSummary(db);
+    assert.equal(summary.falseNegativeCount, 1);
+    assert.equal(summary.unknownCount, 0);
+  });
+});
+
+test("recordFilterAudit does not count a non-skip verdict toward wouldSkipCount even with decisions found", () => {
+  withTempProject((cwd) => {
+    const db = openDatabase(cwd);
+    recordFilterAudit(db, {
+      sessionId: "sess-3",
+      wouldSkip: false,
+      reason: "did not match trivial-session heuristic",
+      transcriptLength: 900,
+      filesTouchedCount: 1,
+      bashToolCallCount: 0,
+      turnCount: 5,
+      actualDecisionsFound: 1,
+    });
+    const summary = getFilterAuditSummary(db);
+    assert.equal(summary.wouldSkipCount, 0);
+    assert.equal(summary.falseNegativeCount, 0);
+    assert.equal(summary.evaluated, 1);
+  });
+});
+
+test("recordFilterAudit upserts on the same sessionId instead of duplicating", () => {
+  withTempProject((cwd) => {
+    const db = openDatabase(cwd);
+    const base = {
+      sessionId: "sess-4",
+      reason: "did not match trivial-session heuristic",
+      transcriptLength: 900,
+      filesTouchedCount: 1,
+      bashToolCallCount: 0,
+      turnCount: 5,
+    };
+    recordFilterAudit(db, { ...base, wouldSkip: false, actualDecisionsFound: null });
+    recordFilterAudit(db, { ...base, wouldSkip: false, actualDecisionsFound: 1 });
+    const summary = getFilterAuditSummary(db);
+    assert.equal(summary.evaluated, 1);
   });
 });
